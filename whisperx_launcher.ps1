@@ -4,12 +4,15 @@ param(
 
 function Write-Status($msg) {
     if ($StatusLog) {
-        Add-Content -Path $StatusLog -Value $msg
+        $sw = [System.IO.StreamWriter]::new($StatusLog, $true, [System.Text.Encoding]::UTF8)
+        $sw.WriteLine($msg)
+        $sw.Close()
     }
 }
 
 $settingsFile = "$env:USERPROFILE\.whisperx_launcher_settings.json"
 $configFile   = "$PSScriptRoot\whisperx_config.json"
+$diarizationScript = "$PSScriptRoot\whisperx_diarization.py"
 
 function Save-Settings($envPath, $scriptPath) {
     $settings = @{ envPath = $envPath; scriptPath = $scriptPath }
@@ -135,14 +138,9 @@ if (Test-Path "\$bin\ffmpeg.exe") {
     }
 }
 "@ | Set-Content -Path $hookFile -Encoding UTF8
-
     if ($hfToken) {
         Write-Status "Downloading diarization models..."
-        python - <<PY
-from pyannote.audio import Pipeline
-Pipeline.from_pretrained('pyannote/speaker-diarization-3.1', use_auth_token="$hfToken")
-print("Diarization model cached successfully.")
-PY
+        python $diarizationScript $hfToken
         Write-Status "Diarization model cached."
     } else {
         Write-Status "Skipping diarization model download."
@@ -183,7 +181,6 @@ if (-not $envPath -or -not (Test-Path $envPath)) {
     $ans = if ($config.UseConfig) { "y" } else { Prompt-Input "Create a new WhisperX environment now? (y/n)" "WhisperX Setup" "y" }
     if ($ans -match '^[Yy]') {
         $envPath = Create-WhisperXEnv -cfg $config
-    } else
     } else {
         Write-Status "Cannot proceed without WhisperX environment."
         exit 1

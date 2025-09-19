@@ -17,7 +17,9 @@ Sub UpdateStatus()
   Dim fso, f, line
   Set fso = CreateObject("Scripting.FileSystemObject")
   If fso.FileExists("{{TEMP_LOG}}") Then
-    Set f = fso.OpenTextFile("{{TEMP_LOG}}", 1)
+    Const ForReading = 1
+    Const TristateFalse = 0
+    Set f = fso.OpenTextFile("%TEMP_LOG%", ForReading, False, TristateFalse)
     line = ""
     Do Until f.AtEndOfStream
       line = f.ReadLine

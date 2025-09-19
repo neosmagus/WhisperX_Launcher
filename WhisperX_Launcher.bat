@@ -55,7 +55,7 @@ REM Create temporary VBS launcher
 >> "%VBS_FILE%" echo tempLog = "%TEMP_LOG%"
 >> "%VBS_FILE%" echo htaFile = "%HTA_FILE%"
 >> "%VBS_FILE%" echo Set objShell = CreateObject("Wscript.Shell")
->> "%VBS_FILE%" echo objShell.Run "mshta.exe """ ^& htaFile ^& """", 1, False
+>> "%VBS_FILE%" echo objShell.Run "mshta.exe """ ^& htaFile ^& """", 1, True
 >> "%VBS_FILE%" echo cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ ^& psScript ^& """ -StatusLog """ ^& tempLog ^& """"
 >> "%VBS_FILE%" echo objShell.Run cmd, 0, True
 >> "%VBS_FILE%" echo On Error Resume Next
@@ -68,8 +68,8 @@ del "%VBS_FILE%" >nul 2>&1
 exit /b
 
 :LAUNCH_CONSOLE
-REM Launch HTA
-start "" mshta.exe "%HTA_FILE%"
+REM Launch HTA and wait for it to close
+start /wait "" mshta.exe "%HTA_FILE%"
 
 REM Run PowerShell script with status logging (console visible)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_PATH%" -StatusLog "%TEMP_LOG%"
