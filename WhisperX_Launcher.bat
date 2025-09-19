@@ -40,10 +40,10 @@ copy "%HTA_TEMPLATE%" "%HTA_FILE%" >nul
 powershell -NoProfile -Command "(Get-Content -Raw '%HTA_FILE%') -replace '\{\{TEMP_LOG\}\}', '%TEMP_LOG%' | Set-Content '%HTA_FILE%'"
 
 if "%USE_VBS%"=="1" (
-    echo VBScript is allowed — launching in Silent Mode...
+    echo VBScript is allowed - launching in Silent Mode...
     goto :LAUNCH_VBS
 ) else (
-    echo VBScript is blocked — launching in Console Mode...
+    echo VBScript is blocked - launching in Console Mode...
     goto :LAUNCH_CONSOLE
 )
 
@@ -77,4 +77,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_PATH%" -StatusLog 
 REM Cleanup
 del "%HTA_FILE%" >nul 2>&1
 del "%TEMP_LOG%" >nul 2>&1
+
 pause
