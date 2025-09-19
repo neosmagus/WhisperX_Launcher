@@ -46,6 +46,57 @@ Note: If Miniconda is not installed, right‑click → Run as administrator to a
 
 ---
 
+## Configuration via whisperx_config.json
+
+The launcher reads settings from `whisperx_config.json` in the same folder.  
+If `UseConfig = true`, the launcher runs unattended and never prompts; missing critical values cause a clear failure.  
+If `UseConfig = false`, missing values are prompted for (GUI or console).
+
+A separate file `%USERPROFILE%\.whisperx_launcher_settings.json` stores last‑used environment and GUI paths.
+
+### Config schema
+
+| Key | Type | Default | Description |
+| --- | ---- | ------- | ----------- |
+| UseConfig | bool | true | Unattended mode toggle |
+| use_console | bool | false | Force console mode |
+| EnvPath | string | C:\conda_envs | Root folder for Conda envs |
+| EnvName | string | WhisperX | Environment name |
+| PythonVersion | string | 3.10.18 | Python version to install |
+| CudaTarget | string | "" | PyTorch CUDA target (e.g. cu118) |
+| UseGPU | bool | false | Install GPU PyTorch |
+| DefaultModel | string | base | Default Whisper model in GUI |
+| OutputDir | string | "" | Default output directory |
+| HuggingFaceToken | string | "" | Token for diarization models |
+| DiarizeOnFirstRun | bool | false | Cache diarization model at setup |
+| UseSafe | bool | true | Avoid pre‑release packages |
+| UseSystemFfmpeg | bool | false | Use system ffmpeg |
+| FfmpegPath | string | "" | Path to system ffmpeg binary |
+| RetryCount | int | 3 | Network retry attempts |
+| BackoffSeconds | int | 5 | Delay between retries |
+| LogTimestamps | bool | true | Prefix log lines with timestamps |
+| ScriptPath | string | "" | Path to whisperx_gui.py |
+| InstallConda | bool | true | Install Miniconda if missing |
+
+### Silent mode prompts
+When `UseConfig = false` and no console is visible, GUI dialogs are shown for inputs.
+
+### Diarization setup
+Tokens and model terms acceptance are required on Hugging Face for diarization.
+
+### Resetting
+Delete `%USERPROFILE%\.whisperx_launcher_settings.json` to clear saved paths.
+
+### Offline installs
+Use local wheels/conda packages and set `UseConfig = true` to avoid network prompts.
+
+### Troubleshooting
+- **CMD parser pitfalls:** Escape parentheses in `.bat` scripts; avoid em dashes.
+- **CUDA mismatch:** If GPU install fails, check driver/CUDA runtime compatibility.
+- **Chocolatey permissions:** Run `.bat` as admin if Miniconda install fails.
+
+---
+
 ## Hugging Face setup for diarization (speaker labeling)
 
 Diarization is optional. Without it, you still get transcription (no speaker labels).  

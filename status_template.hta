@@ -32,43 +32,40 @@ Option Explicit
 Dim logPath
 
 Sub Window_OnLoad()
-  ' The launcher replaces {{TEMP_LOG}} with the actual log file path
   logPath = "{{TEMP_LOG}}"
-
-  ' Resize and center the window
   Dim w, h
-  w = 520
-  h = 140
+  w = 600
+  h = 300
   window.resizeTo w, h
   window.moveTo (screen.availWidth - w) \ 2, (screen.availHeight - h) \ 2
-
-  ' Start polling every second
   window.setInterval "UpdateStatus", 1000
 End Sub
 
 Sub UpdateStatus()
   On Error Resume Next
-  Dim fso, ts, line, lastLine
+  Dim fso, ts, lines, line, i, displayText
   Set fso = CreateObject("Scripting.FileSystemObject")
   If fso.FileExists(logPath) Then
-    Set ts = fso.OpenTextFile(logPath, 1, False, -1) ' -1 = Unicode/UTF-8
-    lastLine = ""
-    Do Until ts.AtEndOfStream
-      line = ts.ReadLine
-      If Len(line) > 0 Then lastLine = line
-    Loop
+    Set ts = fso.OpenTextFile(logPath, 1, False, -1)
+    lines = Split(ts.ReadAll, vbCrLf)
     ts.Close
-    If lastLine <> "" Then
-      document.getElementById("status").innerText = lastLine
-    End If
+    displayText = ""
+    For i = UBound(lines) - 9 To UBound(lines)
+      If i >= 0 Then
+        line = lines(i)
+        If InStr(LCase(line), "error") > 0 Then
+          displayText = displayText & vbCrLf & "[ERROR] " & line
+        ElseIf InStr(LCase(line), "warn") > 0 Then
+          displayText = displayText & vbCrLf & "[WARN] " & line
+        Else
+          displayText = displayText & vbCrLf & line
+        End If
+      End If
+    Next
+    document.getElementById("status").innerText = Trim(displayText)
   Else
     document.getElementById("status").innerText = "Waiting for status log..."
   End If
   On Error GoTo 0
 End Sub
 </script>
-</head>
-<body>
-  <div id="status">Initializing...</div>
-</body>
-</html>

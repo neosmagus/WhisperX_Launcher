@@ -4,6 +4,7 @@ import subprocess
 import os
 import sys
 import json
+import argparse
 
 # List of available Whisper models
 WHISPER_MODELS = [
@@ -28,6 +29,18 @@ To use diarization, you must:
 4. Paste the token into the box below.
 """
 
+# --- CLI arg parsing ---
+parser = argparse.ArgumentParser(description="WhisperX GUI")
+parser.add_argument("--default-model", type=str, help="Default Whisper model to pre-select")
+parser.add_argument("--output-dir", type=str, help="Default output directory")
+parser.add_argument("--hf-token", type=str, help="Default Hugging Face token")
+args, unknown = parser.parse_known_args()
+
+default_model_arg = args.default_model if args.default_model in WHISPER_MODELS else "large-v2"
+default_output_dir_arg = args.output_dir if args.output_dir else ""
+default_hf_token_arg = args.hf_token if args.hf_token else os.environ.get("HUGGINGFACE_TOKEN", "")
+
+# --- GUI callbacks ---
 def browse_file():
     file_path = filedialog.askopenfilename(
         title="Select audio/video file",
@@ -36,6 +49,14 @@ def browse_file():
     if file_path:
         entry_file.delete(0, tk.END)
         entry_file.insert(0, file_path)
+
+def browse_output_dir():
+    folder_path = filedialog.askdirectory(
+        title="Select output directory"
+    )
+    if folder_path:
+        entry_output_dir.delete(0, tk.END)
+        entry_output_dir.insert(0, folder_path)
 
 def format_json_transcript(json_path):
     """Reads WhisperX JSON and writes a -formatted.txt with speaker-by-speaker transcript."""
@@ -72,6 +93,7 @@ def run_transcription():
     model = model_var.get()
     output_format = format_var.get()
     hf_token = entry_token.get().strip()
+    output_dir = entry_output_dir.get().strip()
 
     if not file_path:
         messagebox.showerror("Error", "Please select a file to transcribe.")
@@ -93,8 +115,12 @@ def run_transcription():
             return
 
     # Build output path
-    base, _ = os.path.splitext(file_path)
-    output_path = f"{base}.{output_format}"
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{base_name}.{output_format}")
+    else:
+        output_path = f"{os.path.splitext(file_path)[0]}.{output_format}"
 
     # Build command
     cmd = [
@@ -122,7 +148,10 @@ def run_transcription():
 
         messagebox.showinfo("Done", msg)
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"WhisperX failed:\n{e}")
+        err_msg = str(e)
+        if any(keyword in err_msg.lower() for keyword in ["403", "401", "unauthorized", "forbidden", "not authorized", "access denied"]):
+            err_msg += "\n\nHint: You may need to accept the model terms on Hugging Face."
+        messagebox.showerror("Error", f"WhisperX failed:\n{err_msg}")
 
 # --- GUI setup ---
 root = tk.Tk()
@@ -136,7 +165,7 @@ tk.Button(root, text="Browse...", command=browse_file).grid(row=0, column=2, pad
 
 # Model selection
 tk.Label(root, text="Whisper Model:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-model_var = tk.StringVar(value="large-v2")
+model_var = tk.StringVar(value=default_model_arg)
 tk.OptionMenu(root, model_var, *WHISPER_MODELS).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
 # Output format
@@ -144,19 +173,35 @@ tk.Label(root, text="Output Format:").grid(row=2, column=0, sticky="e", padx=5, 
 format_var = tk.StringVar(value="json")
 tk.OptionMenu(root, format_var, *OUTPUT_FORMATS).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
+# Output directory
+tk.Label(root, text="Output Directory (optional):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+entry_output_dir = tk.Entry(root, width=50)
+entry_output_dir.grid(row=3, column=1, padx=5, pady=5)
+if default_output_dir_arg:
+    entry_output_dir.insert(0, default_output_dir_arg)
+tk.Button(root, text="Browse...", command=browse_output_dir).grid(row=3, column=2, padx=5, pady=5)
+
 # Hugging Face token
-tk.Label(root, text="Hugging Face Token (optional):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+tk.Label(root, text="Hugging Face Token (optional):").grid(row=4, column=0, sticky="e", padx=5, pady=5)
 entry_token = tk.Entry(root, width=50, show="*")
-entry_token.grid(row=3, column=1, padx=5, pady=5)
+entry_token.grid(row=4, column=1, padx=5, pady=5)
+if default_hf_token_arg:
+    entry_token.insert(0, default_hf_token_arg)
 
 # Instructions
-tk.Label(root, text="Instructions for diarization access:").grid(row=4, column=0, sticky="ne", padx=5, pady=5)
+tk.Label(root, text="Instructions for diarization access:").grid(row=5, column=0, sticky="ne", padx=5, pady=5)
 txt_instructions = tk.Text(root, width=60, height=8, wrap="word")
 txt_instructions.insert("1.0", HF_INSTRUCTIONS)
 txt_instructions.config(state="disabled")
-txt_instructions.grid(row=4, column=1, columnspan=2, padx=5, pady=5)
+txt_instructions.grid(row=5, column=1, columnspan=2, padx=5, pady=5)
 
 # Transcribe button
-tk.Button(root, text="Transcribe", command=run_transcription, bg="green", fg="white").grid(row=5, column=0, columnspan=3, pady=10)
+tk.Button(
+    root,
+    text="Transcribe",
+    command=run_transcription,
+    bg="green",
+    fg="white"
+).grid(row=6, column=0, columnspan=3, pady=10)
 
 root.mainloop()

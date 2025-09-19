@@ -45,9 +45,21 @@ function Write-Status {
     param([string]$Message)
     $ts = if ($LogTimestamps) { "[{0:yyyy-MM-dd HH:mm:ss}] " -f (Get-Date) } else { "" }
     $line = "$ts$Message"
+
     if ($script:LastStatus -ne $line) {
         $script:LastStatus = $line
-        if ($StatusLog) { $line | Out-File -FilePath $StatusLog -Encoding UTF8 -Append }
+
+        if ($StatusLog) {
+            # Read existing log (if any), remove any previous occurrence of this message
+            $content = ""
+            if (Test-Path $StatusLog) {
+                $content = Get-Content -Raw -Path $StatusLog -ErrorAction SilentlyContinue
+                $content = ($content -split "`r?`n" | Where-Object { $_ -and ($_ -ne $line) }) -join "`r`n"
+            }
+            # Write updated log with the new status at the end
+            "$content`r`n$line" | Out-File -FilePath $StatusLog -Encoding UTF8
+        }
+
         Write-Host $line
     }
 }
