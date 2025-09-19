@@ -9,6 +9,7 @@ function Write-Status($msg) {
 }
 
 $settingsFile = "$env:USERPROFILE\.whisperx_launcher_settings.json"
+$configFile   = "$PSScriptRoot\whisperx_config.json"
 
 function Save-Settings($envPath, $scriptPath) {
     $settings = @{ envPath = $envPath; scriptPath = $scriptPath }
@@ -17,11 +18,25 @@ function Save-Settings($envPath, $scriptPath) {
 
 function Load-Settings {
     if (Test-Path $settingsFile) {
-        try {
-            return Get-Content $settingsFile | ConvertFrom-Json
-        } catch { return $null }
+        try { return Get-Content $settingsFile | ConvertFrom-Json }
+        catch { return $null }
     }
     return $null
+}
+
+function Load-Config {
+    if (-not (Test-Path $configFile)) {
+        Write-Status "Creating default config file..."
+        $defaultConfig = @{
+            UseConfig     = $false
+            EnvName       = "whisperx_cpu"
+            UseGPU        = $false
+            UseSafe       = $true
+            HuggingFaceToken = ""
+        }
+        $defaultConfig | ConvertTo-Json | Set-Content -Path $configFile -Encoding UTF8
+    }
+    return Get-Content $configFile | ConvertFrom-Json
 }
 
 function Install-Conda {
@@ -36,17 +51,40 @@ function Install-Conda {
     Write-Status "Miniconda installed. Restart shell or run 'refreshenv'."
 }
 
+function Prompt-Input($message, $title, $default) {
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    return [Microsoft.VisualBasic.Interaction]::InputBox($message, $title, $default)
+}
+
 function Create-WhisperXEnv {
+    param($cfg)
+
     Write-Status "Creating WhisperX environment..."
-    $envName = Read-Host "Enter a name for the new conda environment (e.g., whisperx_cpu or whisperx_gpu)"
+
+    if ($cfg.UseConfig) {
+        $envName   = $cfg.EnvName
+        $useGPU    = [bool]$cfg.UseGPU
+        $useSafe   = [bool]$cfg.UseSafe
+        $hfToken   = $cfg.HuggingFaceToken
+    } else {
+        Write-Status "Waiting for input: environment name..."
+        $envName = Prompt-Input "Enter a name for the new conda environment (e.g., whisperx_cpu or whisperx_gpu)" "WhisperX Setup" "whisperx_cpu"
+
+        Write-Status "Waiting for input: GPU choice..."
+        $gpuChoice = Prompt-Input "Do you have an NVIDIA GPU and want GPU acceleration? (y/n)" "WhisperX Setup" "n"
+        $useGPU = $gpuChoice -match '^[Yy]'
+
+        Write-Status "Waiting for input: version choice..."
+        $versionChoice = Prompt-Input "Use safe pinned versions (recommended) or latest? (safe/latest)" "WhisperX Setup" "safe"
+        $useSafe = $versionChoice -match '^(safe|s)$'
+
+        Write-Status "Waiting for input: Hugging Face token..."
+        $hfToken = Prompt-Input "Enter your Hugging Face token (leave blank to skip model download)" "WhisperX Setup" ""
+    }
+
     $envPath = "C:\conda_envs\$envName"
 
-    $gpuChoice = Read-Host "Do you have an NVIDIA GPU and want GPU acceleration? (y/n)"
-    $useGPU = $gpuChoice -match '^[Yy]'
-
-    $versionChoice = Read-Host "Use safe pinned versions (recommended) or latest? (safe/latest)"
-    $useSafe = $versionChoice -match '^(safe|s)$'
-
+    Write-Status "Creating conda environment at $envPath..."
     conda create -p $envPath python=3.10.18 -y
     conda activate $envPath
 
@@ -98,10 +136,8 @@ if (Test-Path "\$bin\ffmpeg.exe") {
 }
 "@ | Set-Content -Path $hookFile -Encoding UTF8
 
-    Write-Status "Downloading diarization models..."
-    Write-Host "NOTE: You must have already accepted the model terms in your Hugging Face account."
-    $hfToken = Read-Host "Enter your Hugging Face token (leave blank to skip model download)"
     if ($hfToken) {
+        Write-Status "Downloading diarization models..."
         python - <<PY
 from pyannote.audio import Pipeline
 Pipeline.from_pretrained('pyannote/speaker-diarization-3.1', use_auth_token="$hfToken")
@@ -118,11 +154,17 @@ PY
 # --- MAIN LOGIC ---
 Write-Status "Starting WhisperX Launcher..."
 $settings = Load-Settings
+$config   = Load-Config
 
 # Step 1: Check for conda
 Write-Status "Checking for Conda..."
 if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    $ans = Read-Host "Conda not found. Install Miniconda now? (y/n)"
+    if ($config.UseConfig -and -not $config.InstallConda) {
+        Write-Status "Conda not found and config says not to install. Exiting."
+        exit 1
+    }
+    Write-Status "Waiting for input: install Miniconda?"
+    $ans = if ($config.UseConfig) { "y" } else { Prompt-Input "Conda not found. Install Miniconda now? (y/n)" "WhisperX Setup" "y" }
     if ($ans -match '^[Yy]') {
         Install-Conda
         Write-Status "Please restart PowerShell and run again."
@@ -137,9 +179,11 @@ if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
 Write-Status "Checking for WhisperX environment..."
 $envPath = $settings.envPath
 if (-not $envPath -or -not (Test-Path $envPath)) {
-    $ans = Read-Host "Create a new WhisperX environment now? (y/n)"
+    Write-Status "Waiting for input: create new environment?"
+    $ans = if ($config.UseConfig) { "y" } else { Prompt-Input "Create a new WhisperX environment now? (y/n)" "WhisperX Setup" "y" }
     if ($ans -match '^[Yy]') {
-        $envPath = Create-WhisperXEnv
+        $envPath = Create-WhisperXEnv -cfg $config
+    } else
     } else {
         Write-Status "Cannot proceed without WhisperX environment."
         exit 1
@@ -161,7 +205,12 @@ if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
         if (Test-Path $defaultPath) {
             $scriptPath = $defaultPath
         } else {
-            $scriptPath = Read-Host "Enter full path to whisperx_gui.py"
+            Write-Status "Waiting for input: GUI script path..."
+            $scriptPath = if ($config.UseConfig -and $config.ScriptPath) {
+                $config.ScriptPath
+            } else {
+                Prompt-Input "Enter full path to whisperx_gui.py" "WhisperX Setup" ""
+            }
             if (-not (Test-Path $scriptPath)) {
                 Write-Status "GUI script not found."
                 exit 1

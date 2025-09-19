@@ -1,0 +1,9 @@
+{
+    "UseConfig": true,
+    "EnvName": "whisperx_cpu",
+    "UseGPU": false,
+    "UseSafe": true,
+    "HuggingFaceToken": "",
+    "ScriptPath": "",
+    "InstallConda": true
+}
