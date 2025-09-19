@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM ============================================================
-REM WhisperX Launcher — Config toggle + robust VBS silent mode
+REM WhisperX Launcher - Config toggle + robust VBS silent mode
 REM ============================================================
 
 REM --- Paths ---
@@ -32,7 +32,7 @@ goto :RUN_SILENT
 
 :RUN_CONSOLE
 REM ============================================================
-REM Console Mode — No HTA, no VBS, direct Python execution
+REM Console Mode - No HTA, no VBS, direct Python execution
 REM ============================================================
 echo [INFO] Starting WhisperX in console mode...
 if exist "%SCRIPT_DIR%venv\Scripts\activate.bat" (
@@ -43,7 +43,7 @@ goto :EOF
 
 :RUN_SILENT
 REM ============================================================
-REM Silent Mode — HTA + robust VBS stealth launcher
+REM Silent Mode - HTA + robust VBS stealth launcher
 REM ============================================================
 
 REM --- Verify HTA template exists ---
