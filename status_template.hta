@@ -1,0 +1,35 @@
+<html>
+<head>
+<title>WhisperX Launcher</title>
+<HTA:APPLICATION ID="app" BORDER="thin" SCROLL="no" SINGLEINSTANCE="yes" SYSMENU="no" CAPTION="yes" SHOWINTASKBAR="yes" />
+<style>
+body { font-family: Segoe UI, sans-serif; font-size: 14px; margin: 10px; background: #f4f4f4; }
+#status { font-weight: bold; }
+</style>
+<script language="VBScript">
+Sub Window_OnLoad()
+  window.resizeTo 400,100
+  window.moveTo (screen.availWidth-400)/2, (screen.availHeight-100)/2
+  window.setInterval "UpdateStatus", 1000
+End Sub
+
+Sub UpdateStatus()
+  Dim fso, f, line
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  If fso.FileExists("{{TEMP_LOG}}") Then
+    Set f = fso.OpenTextFile("{{TEMP_LOG}}", 1)
+    line = ""
+    Do Until f.AtEndOfStream
+      line = f.ReadLine
+    Loop
+    f.Close
+    document.getElementById("status").innerText = line
+  End If
+End Sub
+</script>
+</head>
+<body>
+<div>WhisperX Launcher Status:</div>
+<div id="status">Starting...</div>
+</body>
+</html>
