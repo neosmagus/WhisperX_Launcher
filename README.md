@@ -18,7 +18,7 @@ Includes a universal launcher that runs silently (no console) when possible, or 
 
 Optional: Create a desktop shortcut
 - Right‑click WhisperX_Launcher.bat → Send to → Desktop (create shortcut)
-- Right‑click the shortcut → Properties → Change Icon… → choose an .ico from .\icons
+- Right‑click the shortcut → Properties → Change Icon… → choose an .ico from .\icon
 - Name it: WhisperX – Auto Launcher
 
 ---
@@ -163,3 +163,4 @@ Output:
 
 This project automates setup and usage for WhisperX and related tools.  
 See upstream projects for their licenses and terms.
+
