@@ -1,4 +1,4 @@
-@echo off
+@echo on
 setlocal enabledelayedexpansion
 
 REM ============================================================
@@ -14,17 +14,21 @@ set "VBS_FILE=%TEMP%\whisperx_launcher.vbs"
 set "LOG_FILE=%TEMP%\whisperx_launcher.log"
 
 REM --- Read use_console from JSON ---
-for /f "usebackq tokens=*" %%A in (`powershell -NoProfile -Command ^
-    "(Get-Content '%CONFIG_FILE%' | ConvertFrom-Json).use_console"`) do set USE_CONSOLE=%%A
+for /f "usebackq tokens=*" %%A in (
+    `powershell -NoProfile -Command "(Get-Content '%CONFIG_FILE%' | ConvertFrom-Json).use_console -replace '\s+$',''"`
+) do set "USE_CONSOLE=%%A"
+
+set "USE_CONSOLE=%USE_CONSOLE: =%"
+echo USE_CONSOLE=[%USE_CONSOLE%]
 
 REM --- Branch based on config ---
 if /i "%USE_CONSOLE%"=="True" (
     echo [INFO] Console mode forced by config.
     goto :RUN_CONSOLE
-) else (
-    echo [INFO] Silent mode (HTA) enabled.
-    goto :RUN_SILENT
 )
+
+echo [INFO] Silent mode (HTA) enabled.
+goto :RUN_SILENT
 
 :RUN_CONSOLE
 REM ============================================================
