@@ -1,262 +1,202 @@
+# whisperx_launcher.ps1
+# PowerShell orchestrator for WhisperX Launcher
+# Implements robust env handling, retries, timestamps, CUDA/ffmpeg logic, diarization hints
+
 param(
     [string]$StatusLog = ""
 )
 
-# --- Clear log at start to avoid duplicates from previous runs ---
-if ($StatusLog) {
-    Clear-Content -Path $StatusLog -ErrorAction SilentlyContinue
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# --- Load config ---
+$ConfigPath = Join-Path $PSScriptRoot 'whisperx_config.json'
+if (-not (Test-Path $ConfigPath)) {
+    Write-Error "Config file not found: $ConfigPath"
+    exit 1
 }
+$Config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
 
-# --- Helper: Write status with de-dupe ---
-function Write-Status($msg) {
-    if ($StatusLog) {
-        $last = if (Test-Path $StatusLog) { Get-Content $StatusLog -Tail 1 } else { "" }
-        if ($last -ne $msg) {
-            Add-Content -Path $StatusLog -Value $msg
-        }
-    }
-}
+# --- Resolve config values with defaults ---
+$UseConfig         = $Config.UseConfig
+$UseConsole        = $Config.use_console
+$EnvRoot           = if ($Config.EnvPath) { $Config.EnvPath } else { "C:\conda_envs" }
+$EnvName           = if ($Config.EnvName) { $Config.EnvName } else { "WhisperX" }
+$FinalEnvPath      = Join-Path $EnvRoot $EnvName
+$PythonVersion     = if ($Config.PythonVersion) { $Config.PythonVersion } else { "3.10.18" }
+$CudaTarget        = if ($Config.CudaTarget) { $Config.CudaTarget } else { "" }
+$UseGPU            = [bool]$Config.UseGPU
+$DefaultModel      = if ($Config.DefaultModel) { $Config.DefaultModel } else { "base" }
+$OutputDir         = $Config.OutputDir
+$HfToken           = $Config.HuggingFaceToken
+$DiarizeOnFirstRun = [bool]$Config.DiarizeOnFirstRun
+$UseSafe           = [bool]$Config.UseSafe
+$UseSystemFfmpeg   = [bool]$Config.UseSystemFfmpeg
+$FfmpegPath        = $Config.FfmpegPath
+$RetryCount        = if ($Config.RetryCount) { [int]$Config.RetryCount } else { 3 }
+$BackoffSeconds    = if ($Config.BackoffSeconds) { [int]$Config.BackoffSeconds } else { 5 }
+$LogTimestamps     = if ($null -ne $Config.LogTimestamps) { [bool]$Config.LogTimestamps } else { $true }
+$ScriptPath        = if ($Config.ScriptPath) { $Config.ScriptPath } else { $PSScriptRoot }
+$InstallConda      = [bool]$Config.InstallConda
 
-# --- Helper: Detect hidden console ---
-function In-SilentMode {
-    return ($Host.UI.RawUI.WindowTitle -eq "")
-}
-
-# --- Helper: Prompt Yes/No with GUI fallback ---
-function Prompt-YesNo($message, $title = "WhisperX") {
-    if (In-SilentMode) {
-        Add-Type -AssemblyName Microsoft.VisualBasic
-        $result = [Microsoft.VisualBasic.Interaction]::MsgBox($message, 4 + 32, $title)
-        return ($result -eq "Yes")
-    } else {
-        $ans = Read-Host "$message (y/n)"
-        return ($ans -match '^[Yy]')
-    }
-}
-
-# --- Helper: Prompt text input with GUI fallback ---
-function Prompt-Input($message, $title = "WhisperX", $default = "") {
-    if (In-SilentMode) {
-        Add-Type -AssemblyName Microsoft.VisualBasic
-        return [Microsoft.VisualBasic.Interaction]::InputBox($message, $title, $default)
-    } else {
-        return Read-Host $message
-    }
-}
-
-$settingsFile = "$env:USERPROFILE\.whisperx_launcher_settings.json"
-$ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$configFile   = Join-Path $ScriptDir "whisperx_config.json"
-
-function Save-Settings($envPath, $scriptPath) {
-    $settings = @{ envPath = $envPath; scriptPath = $scriptPath }
-    $settings | ConvertTo-Json | Set-Content -Path $settingsFile -Encoding UTF8
-}
-
-function Load-Settings {
-    if (Test-Path $settingsFile) {
-        try { return Get-Content $settingsFile | ConvertFrom-Json }
-        catch { return $null }
-    }
-    return $null
-}
-
-function Install-Conda {
-    Write-Status "Installing Miniconda..."
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-Status "Installing Chocolatey..."
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    }
-    choco install miniconda3 --params="'/AddToPath:1 /InstallationType:JustMe /RegisterPython:1'" -y
-    Write-Status "Miniconda installed. Restart shell or run 'refreshenv'."
-}
-
-function Create-WhisperXEnv {
-    Write-Status "Creating WhisperX environment..."
-
-    if ($UseConfig) {
-        $envName  = $Config.envName
-        $useGPU   = $Config.useGPU
-        $useSafe  = $Config.useSafe
-    } else {
-        $envName = Prompt-Input "Enter a name for the new conda environment (e.g., whisperx_cpu or whisperx_gpu)"
-        $useGPU  = Prompt-YesNo "Do you have an NVIDIA GPU and want GPU acceleration?"
-        $useSafe = (Prompt-Input "Use safe pinned versions (recommended) or latest? (safe/latest)" -match '^(safe|s)$')
-    }
-
-    $envPath = "C:\conda_envs\$envName"
-
-    conda create -p $envPath python=3.10.18 -y
-    conda activate $envPath
-
-    Write-Status "Installing PyTorch..."
-    if ($useGPU) {
-        if ($useSafe) {
-            pip install torch==2.3.1+cu121 torchaudio==2.3.1+cu121 torchvision==0.18.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-        } else {
-            pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
-        }
-    } else {
-        if ($useSafe) {
-            pip install torch==2.3.1+cpu torchaudio==2.3.1+cpu torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu
-        } else {
-            pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
-        }
-    }
-
-    Write-Status "Installing WhisperX and dependencies..."
-    if ($useSafe) {
-        pip install whisperx==3.3.0
-        pip install pyannote.audio==3.3.2 pyannote.pipeline==3.0.1
-        pip install numpy==1.26.4 "pyannote-core<6.0.0" "pyannote-metrics<4.0.0"
-    } else {
-        pip install whisperx
-    }
-
-    pip install matplotlib imageio-ffmpeg
-
-    Write-Status "Configuring ffmpeg..."
-    $bin = "$Env:CONDA_PREFIX\Lib\site-packages\imageio_ffmpeg\binaries"
-    if (Test-Path "$bin") {
-        $ffmpegExe = Get-ChildItem $bin -Filter "ffmpeg-win-*.exe" | Select-Object -First 1
-        if ($ffmpegExe -and -not (Test-Path "$bin\ffmpeg.exe")) {
-            Copy-Item $ffmpegExe.FullName "$bin\ffmpeg.exe"
-        }
-    }
-
-    $activateDir = "$Env:CONDA_PREFIX\etc\conda\activate.d"
-    New-Item -ItemType Directory -Force -Path $activateDir | Out-Null
-    $hookFile = "$activateDir\ffmpeg.ps1"
-@"
-# Auto-add imageio-ffmpeg binary folder to PATH
-\$bin = `"$Env:CONDA_PREFIX\Lib\site-packages\imageio_ffmpeg\binaries`"
-if (Test-Path "\$bin\ffmpeg.exe") {
-    if (\$Env:PATH -notlike "\$bin*") {
-        \$Env:PATH = "\$bin;" + \$Env:PATH
+# --- Status logging helpers ---
+$script:LastStatus = $null
+function Write-Status {
+    param([string]$Message)
+    $ts = if ($LogTimestamps) { "[{0:yyyy-MM-dd HH:mm:ss}] " -f (Get-Date) } else { "" }
+    $line = "$ts$Message"
+    if ($script:LastStatus -ne $line) {
+        $script:LastStatus = $line
+        if ($StatusLog) { $line | Out-File -FilePath $StatusLog -Encoding UTF8 -Append }
+        Write-Host $line
     }
 }
-"@ | Set-Content -Path $hookFile -Encoding UTF8
+function Set-Phase { param([string]$Phase) ; Write-Status $Phase }
 
-    Write-Status "Downloading diarization models..."
-    $hfToken = if ($UseConfig) { $Config.hfToken } else { Prompt-Input "Enter your Hugging Face token (leave blank to skip model download)" }
-    if ($hfToken) {
-        $diarScript = Join-Path $ScriptDir "whisperx_diarization.py"
-        if (Test-Path $diarScript) {
-            python "$diarScript" "$hfToken"
-        } else {
-            Write-Warning "Diarization script not found: $diarScript"
-        }
-    } else {
-        Write-Status "Skipping diarization model download."
-    }
-
-    return $envPath
-}
-
-# --- MAIN LOGIC ---
-Write-Status "Starting WhisperX Launcher..."
-
-# Load config if present
-$Config = $null
-$UseConfig = $false
-if (Test-Path $configFile) {
-    try {
-        $Config = Get-Content $configFile -Raw | ConvertFrom-Json
-        $UseConfig = $Config.UseConfig -eq $true
-    } catch {
-        Write-Warning "Failed to parse config file."
-    }
-}
-
-$settings = Load-Settings
-
-# Step 1: Check for conda
-Write-Status "Checking for Conda..."
-if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    if ($UseConfig) {
-        if ($Config.installConda) {
-            Install-Conda
-            Write-Status "Please restart PowerShell and run again."
-            exit
-        } else {
-            Write-Status "Cannot proceed without Conda."
-            exit 1
-        }
-    } else {
-        if (Prompt-YesNo "Conda not found. Install Miniconda now?") {
-            Install-Conda
-            Write-Status "Please restart PowerShell and run again."
-            exit
-        } else {
-            Write-Status "Cannot proceed without Conda."
-            exit 1
-        }
-    }
-}
-
-# Step 2: Find WhisperX env
-Write-Status "Checking for WhisperX environment..."
-$envPath = $settings.envPath
-
-if (-not $envPath -or -not (Test-Path $envPath)) {
-    if ($UseConfig -and $Config.envPath) {
-        if (Test-Path $Config.envPath) {
-            $envPath = $Config.envPath
-        } else {
-            Write-Status "Configured environment path not found: $($Config.envPath)"
-            $envPath = Create-WhisperXEnv
-        }
-    } else {
-        if (Prompt-YesNo "Create a new WhisperX environment now?") {
-            $envPath = Create-WhisperXEnv
-        } else {
-            Write-Status "Cannot proceed without WhisperX environment."
-            exit 1
-        }
-    }
-}
-
-# Step 3: Find GUI script
-Write-Status "Locating GUI script..."
-$scriptPath = $settings.scriptPath
-
-if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
-    if ($UseConfig -and $Config.scriptPath) {
-        if (Test-Path $Config.scriptPath) {
-            $scriptPath = $Config.scriptPath
-        } else {
-            Write-Status "Configured GUI script not found: $($Config.scriptPath)"
-            $scriptPath = Prompt-Input "Enter full path to whisperx_gui.py"
-        }
-    } else {
-        # Auto-detect in same folder as this .ps1 before prompting
-        $ps1Folder = Split-Path -Parent $MyInvocation.MyCommand.Definition
-        $autoGuiPath = Join-Path $ps1Folder "whisperx_gui.py"
-        if (Test-Path $autoGuiPath) {
-            $scriptPath = $autoGuiPath
-        } else {
-            $defaultPath = Join-Path (Get-Location) "whisperx_gui.py"
-            if (Test-Path $defaultPath) {
-                $scriptPath = $defaultPath
+# --- Retry wrapper ---
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$ScriptBlock,
+        [int]$Retries = $RetryCount,
+        [int]$Backoff = $BackoffSeconds,
+        [string]$What = "operation"
+    )
+    $attempt = 0
+    while ($true) {
+        try {
+            & $ScriptBlock
+            return
+        } catch {
+            $attempt++
+            if ($attempt -gt $Retries) {
+                Write-Status "Failed $What after $Retries retries: $($_.Exception.Message)"
+                throw
             } else {
-                $scriptPath = Prompt-Input "Enter full path to whisperx_gui.py"
-                if (-not (Test-Path $scriptPath)) {
-                    Write-Status "GUI script not found."
-                    exit 1
-                }
+                Write-Status "Error during $What (attempt $attempt/$Retries): $($_.Exception.Message). Retrying in $Backoff seconds..."
+                Start-Sleep -Seconds $Backoff
             }
         }
     }
 }
 
-# Save settings for next time
-Save-Settings $envPath $scriptPath
+# --- Quote helper ---
+function Q { param([string]$p) if ($p -match '\s') { return '"' + $p + '"' } else { return $p } }
 
-# Step 4: Activate env and run GUI
-Write-Status "Launching WhisperX GUI..."
-conda activate $envPath
-python "$scriptPath"
+# --- Conda bootstrap ---
+Set-Phase "Checking for Conda"
+if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
+    if ($InstallConda) {
+        Invoke-WithRetry -What "Miniconda install" -ScriptBlock {
+            Write-Status "Installing Miniconda..."
+            choco install miniconda3 -y
+        }
+        $env:PATH = "$env:ALLUSERSPROFILE\Miniconda3\Scripts;$env:ALLUSERSPROFILE\Miniconda3;$env:PATH"
+    } else {
+        throw "Conda not found and InstallConda=false."
+    }
+}
 
-Write-Status "WhisperX GUI closed."
+# --- Environment creation ---
+Set-Phase "Ensuring environment at $FinalEnvPath"
+if (-not (Test-Path $FinalEnvPath)) {
+    Invoke-WithRetry -What "conda env creation" -ScriptBlock {
+        & conda create -y -p $FinalEnvPath python=$PythonVersion
+    }
+} else {
+    Write-Status "Using existing environment at $(Q $FinalEnvPath)"
+}
+
+# --- CUDA preflight ---
+function Get-CudaInfo {
+    try {
+        $nvidiaSmi = (Get-Command nvidia-smi -ErrorAction Stop).Source
+    } catch { return @{ HasGPU = $false; Driver = "" } }
+    $info = & $nvidiaSmi --query-gpu=driver_version --format=csv,noheader 2>$null
+    return @{ HasGPU = $true; Driver = ($info | Select-Object -First 1) }
+}
+$cuda = Get-CudaInfo
+if ($UseGPU) {
+    if (-not $cuda.HasGPU) {
+        $msg = "No NVIDIA GPU/driver detected."
+        if ($UseConfig) { throw "$msg Aborting because UseGPU=true under UseConfig." }
+        else {
+            Write-Status "$msg Falling back to CPU."
+            $UseGPU = $false
+        }
+    }
+}
+
+# --- PyTorch install ---
+Set-Phase "Installing PyTorch"
+$torchIndex = ""
+if ($UseGPU -and $CudaTarget) { $torchIndex = "https://download.pytorch.org/whl/$CudaTarget" }
+elseif (-not $UseGPU) { $torchIndex = "https://download.pytorch.org/whl/cpu" }
+
+function Pip-Install {
+    param([string[]]$Args, [string]$What = "pip install")
+    Invoke-WithRetry -What $What -ScriptBlock {
+        & conda run -p $FinalEnvPath python -m pip install @Args
+    }
+}
+if ($torchIndex) {
+    Pip-Install -What "PyTorch" -Args @("--index-url", $torchIndex, "torch", "torchaudio")
+}
+
+# --- WhisperX + deps ---
+Set-Phase "Installing WhisperX"
+Pip-Install -What "WhisperX" -Args @("whisperx")
+if (-not $UseSystemFfmpeg) {
+    Pip-Install -What "imageio-ffmpeg" -Args @("imageio-ffmpeg")
+}
+
+# --- ffmpeg handling ---
+Set-Phase "ffmpeg setup"
+if ($UseSystemFfmpeg -and $FfmpegPath) {
+    if (Test-Path $FfmpegPath) {
+        $ffDir = Split-Path -Parent $FfmpegPath
+        $env:PATH = "$ffDir;$($env:PATH)"
+        Write-Status "Using system ffmpeg at $(Q $FfmpegPath)"
+    } else {
+        Write-Status "FfmpegPath not found: $(Q $FfmpegPath). Falling back to imageio-ffmpeg."
+    }
+}
+
+# --- Diarization pre-cache ---
+if ($DiarizeOnFirstRun -and $HfToken) {
+    Set-Phase "Caching diarization model"
+    try {
+        Invoke-WithRetry -What "Diarization cache" -ScriptBlock {
+            & conda run -p $FinalEnvPath python (Join-Path $PSScriptRoot "whisperx_diarization.py") $HfToken
+        }
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -match "403|401|Unauthorized|Forbidden|not authorized|access") {
+            Write-Status "Hugging Face access denied. Accept model terms and verify token."
+        }
+        throw
+    }
+}
+
+# --- Launch GUI ---
+Set-Phase "Launching GUI"
+
+$guiPath = Join-Path $PSScriptRoot "whisperx_gui.py"
+$guiArgs = @()
+
+# Pass default model and output dir if configured
+if ($DefaultModel) { $guiArgs += @("--default-model", $DefaultModel) }
+if ($OutputDir)    { $guiArgs += @("--output-dir", $OutputDir) }
+
+# Pass Hugging Face token via environment if present
+if ($HfToken) { $env:HUGGINGFACE_TOKEN = $HfToken }
+
+# Run the GUI inside the environment using conda run
+try {
+    & conda run -p $FinalEnvPath python $guiPath @guiArgs
+} catch {
+    Write-Status "Error launching GUI: $($_.Exception.Message)"
+    throw
+}
+
+Set-Phase "WhisperX session complete"
+Write-Status "All tasks finished successfully."

@@ -1,10 +1,33 @@
 {
-    "UseConfig": true,
-    "use_console": true,
-    "EnvName": "whisperx_cpu",
-    "UseGPU": false,
-    "UseSafe": true,
-    "HuggingFaceToken": "",
-    "ScriptPath": "",
-    "InstallConda": true
+  // ======== MOST LIKELY TO BE CHANGED BY USER ========
+
+  "UseConfig": true,                  // true = unattended mode using this file; false = prompt for missing values
+  "use_console": true,                // true = show console window; false = silent mode with HTA status window
+
+  "EnvPath": "C:\\conda_envs",         // Root folder where Conda environments are stored
+  "EnvName": "WhisperX",               // Name of the environment folder inside EnvPath
+  "PythonVersion": "3.10.18",          // Python version to install in the environment
+  "CudaTarget": "",                    // GPU build target for PyTorch (e.g., "cu118", "cu121"); empty = CPU build
+  "UseGPU": false,                     // true = install GPU-enabled PyTorch; false = CPU-only
+  "DefaultModel": "base",              // Default Whisper model for GUI (base, small, medium, large-v2, etc.)
+  "OutputDir": "",                     // Optional default output directory; empty = prompt or GUI selection
+
+  "HuggingFaceToken": "",              // Token for Hugging Face model downloads (needed for diarization)
+  "DiarizeOnFirstRun": false,          // true = pre-cache diarization model at setup if token is provided
+
+  // ======== INSTALLATION / RUNTIME OPTIONS ========
+
+  "UseSafe": true,                     // true = safer installs (avoid pre-release/untested packages)
+  "UseSystemFfmpeg": false,            // true = use system ffmpeg instead of imageio-ffmpeg
+  "FfmpegPath": "",                    // Path to system ffmpeg binary (used if UseSystemFfmpeg = true)
+
+  "RetryCount": 3,                     // Number of retries for networked installs (pip, conda, Chocolatey)
+  "BackoffSeconds": 5,                 // Seconds to wait between retries
+
+  "LogTimestamps": true,               // true = prefix status lines with timestamps in logs/HTA
+
+  // ======== LEAST LIKELY TO BE CHANGED ========
+
+  "ScriptPath": "",                    // Path to whisperx_gui.py; empty = use launcher folder
+  "InstallConda": true                 // true = install Miniconda if not found; false = require pre-installed Conda
 }
