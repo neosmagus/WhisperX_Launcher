@@ -1,6 +1,6 @@
 {
     "UseConfig": true,
-    "use_console": false,
+    "use_console": true,
     "EnvName": "whisperx_cpu",
     "UseGPU": false,
     "UseSafe": true,
