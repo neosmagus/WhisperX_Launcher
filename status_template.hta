@@ -1,37 +1,76 @@
 <html>
 <head>
-<title>WhisperX Launcher</title>
-<HTA:APPLICATION ID="app" BORDER="thin" SCROLL="no" SINGLEINSTANCE="yes" SYSMENU="no" CAPTION="yes" SHOWINTASKBAR="yes" />
+<title>WhisperX Status</title>
+<HTA:APPLICATION
+  ID="WhisperXStatus"
+  APPLICATIONNAME="WhisperX Status"
+  BORDER="thin"
+  BORDERSTYLE="normal"
+  CAPTION="yes"
+  SHOWINTASKBAR="yes"
+  SINGLEINSTANCE="yes"
+  SYSMENU="yes"
+  WINDOWSTATE="normal">
 <style>
-body { font-family: Segoe UI, sans-serif; font-size: 14px; margin: 10px; background: #f4f4f4; }
-#status { font-weight: bold; }
+body {
+    font-family: Consolas, monospace;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    margin: 0;
+    padding: 10px;
+}
+h3 {
+    color: #00ff99;
+    margin-bottom: 5px;
+}
+.mode-indicator {
+    font-size: 0.9em;
+    color: #ffcc00;
+    margin-bottom: 5px;
+}
+.timestamp {
+    font-size: 0.8em;
+    color: #999999;
+    margin-bottom: 15px;
+}
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
 </style>
 <script language="VBScript">
-Sub Window_OnLoad()
-  window.resizeTo 400,100
-  window.moveTo (screen.availWidth-400)/2, (screen.availHeight-100)/2
-  window.setInterval "UpdateStatus", 1000
+Dim logPath
+logPath = "{{TEMP_LOG}}"
+
+Sub Window_OnLoad
+    document.title = "WhisperX Status"
+    RefreshLog
+    window.setInterval "RefreshLog", 2000
 End Sub
 
-Sub UpdateStatus()
-  Dim fso, f, line
-  Set fso = CreateObject("Scripting.FileSystemObject")
-  If fso.FileExists("{{TEMP_LOG}}") Then
-    Const ForReading = 1
-    Const TristateFalse = 0
-    Set f = fso.OpenTextFile("%TEMP_LOG%", ForReading, False, TristateFalse)
-    line = ""
-    Do Until f.AtEndOfStream
-      line = f.ReadLine
-    Loop
-    f.Close
-    document.getElementById("status").innerText = line
-  End If
+Sub RefreshLog
+    On Error Resume Next
+    Dim fso, file, ts, content, lastMod
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If fso.FileExists(logPath) Then
+        Set file = fso.GetFile(logPath)
+        lastMod = file.DateLastModified
+        Set ts = file.OpenAsTextStream(1, 0)
+        content = ts.ReadAll
+        ts.Close
+        document.getElementById("log").innerText = content
+        document.getElementById("timestamp").innerText = "Last updated: " & lastMod
+    Else
+        document.getElementById("log").innerText = "Waiting for log file..."
+        document.getElementById("timestamp").innerText = ""
+    End If
 End Sub
 </script>
 </head>
 <body>
-<div>WhisperX Launcher Status:</div>
-<div id="status">Starting...</div>
+<h3>WhisperX Status Window</h3>
+<div class="mode-indicator">Silent Mode Active — running in background</div>
+<div class="timestamp" id="timestamp"></div>
+<pre id="log">Initializing...</pre>
 </body>
 </html>

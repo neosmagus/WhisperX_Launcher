@@ -1,81 +1,88 @@
 @echo off
-REM === WhisperX Universal Launcher (Template-based HTA) ===
+setlocal enabledelayedexpansion
 
-setlocal
+REM ============================================================
+REM WhisperX Launcher — Config toggle + robust VBS silent mode
+REM ============================================================
 
-:: Get the folder this .bat is in
+REM --- Paths ---
 set "SCRIPT_DIR=%~dp0"
-set "PS1_PATH=%SCRIPT_DIR%whisperx_launcher.ps1"
+set "CONFIG_FILE=%SCRIPT_DIR%whisperx_config.json"
 set "HTA_TEMPLATE=%SCRIPT_DIR%status_template.hta"
-
-:: Temp log file for status messages
-set "TEMP_LOG=%TEMP%\whisperx_status.log"
 set "HTA_FILE=%TEMP%\whisperx_status.hta"
-set "VBS_FILE=%TEMP%\whisperx_temp_launcher.vbs"
+set "VBS_FILE=%TEMP%\whisperx_launcher.vbs"
+set "LOG_FILE=%TEMP%\whisperx_launcher.log"
 
-:: Check for required files
-if not exist "%PS1_PATH%" (
-    echo ERROR: Could not find whisperx_launcher.ps1 in "%SCRIPT_DIR%"
-    pause
-    exit /b 1
+REM --- Read use_console from JSON ---
+for /f "usebackq tokens=*" %%A in (`powershell -NoProfile -Command ^
+    "(Get-Content '%CONFIG_FILE%' | ConvertFrom-Json).use_console"`) do set USE_CONSOLE=%%A
+
+REM --- Branch based on config ---
+if /i "%USE_CONSOLE%"=="True" (
+    echo [INFO] Console mode forced by config.
+    goto :RUN_CONSOLE
+) else (
+    echo [INFO] Silent mode (HTA) enabled.
+    goto :RUN_SILENT
 )
+
+:RUN_CONSOLE
+REM ============================================================
+REM Console Mode — No HTA, no VBS, direct Python execution
+REM ============================================================
+echo [INFO] Starting WhisperX in console mode...
+if exist "%SCRIPT_DIR%venv\Scripts\activate.bat" (
+    call "%SCRIPT_DIR%venv\Scripts\activate.bat"
+)
+python "%SCRIPT_DIR%whisperx_gui.py"
+goto :EOF
+
+:RUN_SILENT
+REM ============================================================
+REM Silent Mode — HTA + robust VBS stealth launcher
+REM ============================================================
+
+REM --- Verify HTA template exists ---
 if not exist "%HTA_TEMPLATE%" (
-    echo ERROR: Could not find status_template.hta in "%SCRIPT_DIR%"
+    echo [ERROR] HTA template missing: %HTA_TEMPLATE%
     pause
-    exit /b 1
+    goto :EOF
 )
 
-:: Test if VBScript is allowed
-> "%TEMP%\vbstest.vbs" echo WScript.Quit 0
-cscript //nologo "%TEMP%\vbstest.vbs" >nul 2>&1
-if errorlevel 1 (
-    set "USE_VBS=0"
-) else (
-    set "USE_VBS=1"
-)
-del "%TEMP%\vbstest.vbs" >nul 2>&1
-
-:: Prepare HTA file from template
-copy "%HTA_TEMPLATE%" "%HTA_FILE%" >nul
-powershell -NoProfile -Command "(Get-Content -Raw '%HTA_FILE%') -replace '\{\{TEMP_LOG\}\}', '%TEMP_LOG%' | Set-Content '%HTA_FILE%'"
-
-if "%USE_VBS%"=="1" (
-    echo VBScript is allowed - launching in Silent Mode...
-    goto :LAUNCH_VBS
-) else (
-    echo VBScript is blocked - launching in Console Mode...
-    goto :LAUNCH_CONSOLE
+REM --- Copy HTA template to temp ---
+copy /Y "%HTA_TEMPLATE%" "%HTA_FILE%" >nul || (
+    echo [ERROR] Failed to copy HTA file.
+    pause
+    goto :EOF
 )
 
-:LAUNCH_VBS
-REM Create temporary VBS launcher
-> "%VBS_FILE%" echo Option Explicit
->> "%VBS_FILE%" echo Dim objShell, psScript, tempLog, htaFile, cmd
->> "%VBS_FILE%" echo psScript = "%PS1_PATH%"
->> "%VBS_FILE%" echo tempLog = "%TEMP_LOG%"
->> "%VBS_FILE%" echo htaFile = "%HTA_FILE%"
->> "%VBS_FILE%" echo Set objShell = CreateObject("Wscript.Shell")
->> "%VBS_FILE%" echo objShell.Run "mshta.exe """ ^& htaFile ^& """", 1, True
->> "%VBS_FILE%" echo cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ ^& psScript ^& """ -StatusLog """ ^& tempLog ^& """"
->> "%VBS_FILE%" echo objShell.Run cmd, 0, True
->> "%VBS_FILE%" echo On Error Resume Next
->> "%VBS_FILE%" echo CreateObject("Scripting.FileSystemObject").DeleteFile htaFile
->> "%VBS_FILE%" echo CreateObject("Scripting.FileSystemObject").DeleteFile tempLog
+REM --- Replace placeholder in HTA with log path ---
+powershell -NoProfile -Command ^
+    "(Get-Content '%HTA_FILE%') -replace '\{\{TEMP_LOG\}\}', '%LOG_FILE%' | Set-Content '%HTA_FILE%'"
 
-REM Run the VBS launcher
+REM --- Create robust VBS stealth launcher ---
+REM This version handles spaces, quotes, and passes args safely
+(
+    echo Set objShell = CreateObject("WScript.Shell")
+    echo cmdLine = "cmd /c """"%~f0"" internal_run > ""%LOG_FILE%"" 2^>^&1"""
+    echo objShell.Run cmdLine, 0, True
+) > "%VBS_FILE%"
+
+REM --- Launch HTA status window ---
+start "" mshta.exe "%HTA_FILE%"
+
+REM --- Launch VBS to run batch silently ---
 cscript //nologo "%VBS_FILE%"
-del "%VBS_FILE%" >nul 2>&1
-exit /b
+goto :EOF
 
-:LAUNCH_CONSOLE
-REM Launch HTA and wait for it to close
-start /wait "" mshta.exe "%HTA_FILE%"
+:internal_run
+REM ============================================================
+REM This section runs the actual WhisperX process silently
+REM ============================================================
 
-REM Run PowerShell script with status logging (console visible)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_PATH%" -StatusLog "%TEMP_LOG%"
+if exist "%SCRIPT_DIR%venv\Scripts\activate.bat" (
+    call "%SCRIPT_DIR%venv\Scripts\activate.bat"
+)
 
-REM Cleanup
-del "%HTA_FILE%" >nul 2>&1
-del "%TEMP_LOG%" >nul 2>&1
-
-pause
+python "%SCRIPT_DIR%whisperx_gui.py"
+goto :EOF
