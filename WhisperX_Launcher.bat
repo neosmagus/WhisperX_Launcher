@@ -4,7 +4,7 @@ REM - Console mode: no HTA, direct PS1 call
 REM - Silent mode: copy static HTA template, run PS1 directly
 REM - Config override via whisperx_config.json
 
-setlocal
+setlocal enabledelayedexpansion
 
 :: --- Paths ---
 set "SCRIPT_DIR=%~dp0"
@@ -16,13 +16,14 @@ set "HTA_FILE=%TEMP%\whisperx_status.hta"
 
 :: --- Config override check ---
 if exist "%CONFIG_FILE%" (
-    for /f "usebackq tokens=*" %%A in (
+    for /F "usebackq tokens=*" %%A in (
         `powershell -NoProfile -Command "(Get-Content '%CONFIG_FILE%' -Raw | ConvertFrom-Json).use_console -replace '\s+$',''"`
     ) do set "USE_CONSOLE=%%A"
-    if /i "%USE_CONSOLE%"=="True" (
-        echo [INFO] Console mode forced by config.
-        goto :LAUNCH_CONSOLE
-    )
+)
+
+if /I "!USE_CONSOLE!"=="True" (
+    echo [INFO] Console mode forced by config.
+    goto :LAUNCH_CONSOLE
 )
 
 :: --- Check PS1 exists ---
@@ -32,23 +33,25 @@ if not exist "%PS1_PATH%" (
     exit /b 1
 )
 
-:: --- VBScript capability check (still used to decide silent vs console) ---
+:: --- VBScript capability check ---
 > "%TEMP%\vbstest.vbs" echo WScript.Quit 0
 cscript //nologo "%TEMP%\vbstest.vbs" >nul 2>&1
-if errorlevel 1 (
-    set "USE_VBS=0"
-) else (
-    set "USE_VBS=1"
-)
+
+if errorlevel 1 set "USE_VBS=0"
+if not errorlevel 1 set "USE_VBS=1"
+
 del "%TEMP%\vbstest.vbs" >nul 2>&1
 
-if "%USE_VBS%"=="1" (
-    echo [INFO] VBScript allowed — launching in Silent Mode (no VBS wrapper)...
+:: Clean the variable to strip any stray CR/LF or spaces
+for /f "delims=" %%V in ("!USE_VBS!") do set "USE_VBS=%%V"
+
+if "!USE_VBS!"=="1" (
+    echo [INFO] VBScript allowed - launching in Silent Mode ^(no VBS wrapper^)... 
     goto :LAUNCH_SILENT
-) else (
-    echo [INFO] VBScript blocked — launching in Console Mode...
-    goto :LAUNCH_CONSOLE
 )
+
+echo [INFO] VBScript blocked - launching in Console Mode...
+goto :LAUNCH_CONSOLE
 
 :: --- Prepare HTA from template ---
 :PREPARE_HTA
