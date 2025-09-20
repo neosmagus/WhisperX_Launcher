@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, scrolledtext
 import subprocess
 import os
 import sys
 import json
 import argparse
+import threading
 
 # List of available Whisper models
 WHISPER_MODELS = [
@@ -88,7 +89,13 @@ def format_json_transcript(json_path):
         messagebox.showerror("Formatting Error", f"Failed to format JSON transcript:\n{e}")
         return None
 
-def run_transcription():
+def append_log(message):
+    log_box.configure(state="normal")
+    log_box.insert(tk.END, message)
+    log_box.configure(state="disabled")
+    log_box.see(tk.END)
+
+def run_transcription_thread():
     file_path = entry_file.get().strip()
     model = model_var.get()
     output_format = format_var.get()
@@ -105,16 +112,14 @@ def run_transcription():
 
     diarize_flag = "--diarize"
     if not hf_token:
-        # Warn but allow
         if messagebox.askyesno("No Hugging Face Token",
                                "No Hugging Face token provided.\n"
                                "Diarization will fail unless the model is already cached.\n"
                                "Do you want to continue without diarization?"):
-            diarize_flag = ""  # skip diarization
+            diarize_flag = ""
         else:
             return
 
-    # Build output path
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -122,7 +127,6 @@ def run_transcription():
     else:
         output_path = f"{os.path.splitext(file_path)[0]}.{output_format}"
 
-    # Build command
     cmd = [
         sys.executable, "-m", "whisperx",
         file_path,
@@ -134,24 +138,31 @@ def run_transcription():
     if hf_token:
         cmd.extend(["--hf_token", hf_token])
 
-    # Run WhisperX
+    append_log(f"Starting transcription...\nCommand: {' '.join(cmd)}\n\n")
+
     try:
-        messagebox.showinfo("Transcription Started", "Transcription has started. This may take a while...")
-        subprocess.run(cmd, check=True)
-        msg = f"Transcription complete.\nOutput saved to:\n{output_path}"
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            append_log(line)
+        process.wait()
 
-        # If JSON, auto-format
-        if output_format == "json" and os.path.exists(output_path):
-            formatted_path = format_json_transcript(output_path)
-            if formatted_path:
-                msg += f"\nFormatted transcript saved to:\n{formatted_path}"
+        if process.returncode == 0:
+            msg = f"\nTranscription complete.\nOutput saved to:\n{output_path}"
+            if output_format == "json" and os.path.exists(output_path):
+                formatted_path = format_json_transcript(output_path)
+                if formatted_path:
+                    msg += f"\nFormatted transcript saved to:\n{formatted_path}"
+            append_log(msg + "\n")
+            messagebox.showinfo("Done", msg)
+        else:
+            append_log(f"\nWhisperX failed with exit code {process.returncode}\n")
+            messagebox.showerror("Error", f"WhisperX failed. See log for details.")
+    except Exception as e:
+        append_log(f"\nError running WhisperX: {e}\n")
+        messagebox.showerror("Error", f"Error running WhisperX:\n{e}")
 
-        messagebox.showinfo("Done", msg)
-    except subprocess.CalledProcessError as e:
-        err_msg = str(e)
-        if any(keyword in err_msg.lower() for keyword in ["403", "401", "unauthorized", "forbidden", "not authorized", "access denied"]):
-            err_msg += "\n\nHint: You may need to accept the model terms on Hugging Face."
-        messagebox.showerror("Error", f"WhisperX failed:\n{err_msg}")
+def run_transcription():
+    threading.Thread(target=run_transcription_thread, daemon=True).start()
 
 # --- GUI setup ---
 root = tk.Tk()
@@ -203,5 +214,10 @@ tk.Button(
     bg="green",
     fg="white"
 ).grid(row=6, column=0, columnspan=3, pady=10)
+
+# Live log output box
+tk.Label(root, text="Live Log:").grid(row=7, column=0, sticky="ne", padx=5, pady=5)
+log_box = scrolledtext.ScrolledText(root, width=80, height=15, wrap="word", state="disabled")
+log_box.grid(row=7, column=1, columnspan=2, padx=5, pady=5)
 
 root.mainloop()
