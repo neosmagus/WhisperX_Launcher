@@ -1,22 +1,40 @@
 param(
-    [string]$ConfigPath = "$(Join-Path $PSScriptRoot 'whisperx_config.json')"
+    [string]$ConfigPath = "$(Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) '..\whisperx_config.json')"
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Info($Message) {
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$ts] [INFO] $Message"
+# --- Load config ---
+if (-not (Test-Path $ConfigPath)) {
+    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    exit 1
+}
+try {
+    $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+} catch {
+    Write-Host "[ERROR] Failed to parse config file: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
 
-function Write-Warn($Message) {
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow
-}
+# --- Resolve log directory ---
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$LogDir = if ($config.LogPath) { Resolve-Path (Join-Path $ScriptDir $config.LogPath) } else { Join-Path $ScriptDir '..\logs' }
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
 
-function Write-ErrorMsg($Message) {
+# --- Create log file ---
+$LogFile = Join-Path $LogDir ("launcher_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red
+    $line = "[$ts] [$Level] $Message"
+    switch ($Level) {
+        "WARN"  { Write-Host $line -ForegroundColor Yellow }
+        "ERROR" { Write-Host $line -ForegroundColor Red }
+        "OK"    { Write-Host $line -ForegroundColor Green }
+        default { Write-Host $line }
+    }
+    Add-Content -Path $LogFile -Value $line
 }
 
 function Retry-Command {
@@ -29,179 +47,148 @@ function Retry-Command {
     for ($i = 1; $i -le $MaxRetries; $i++) {
         try {
             & $Script
-            return
+            return $true
         }
         catch {
-            Write-Warn "Attempt $i failed during ${What}: $($_.Exception.Message)"
+            Write-Log "Attempt $i failed during $What: $($_.Exception.Message)" "WARN"
             if ($i -lt $MaxRetries) {
-                Write-Info "Retrying in $DelaySeconds seconds..."
+                Write-Log "Retrying in $DelaySeconds seconds..."
                 Start-Sleep -Seconds $DelaySeconds
-            }
-            else {
-                throw
             }
         }
     }
+    return $false
 }
 
 function Install-Conda {
-    Write-Info "Installing Miniconda..."
-
-    # Install Chocolatey if missing (elevated)
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-Info "Chocolatey not found — requesting elevation to install..."
-        $chocoInstallCmd = @'
+    Write-Log "Installing Miniconda..."
+    try {
+        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Write-Log "Chocolatey not found - installing..."
+            $chocoInstallCmd = @'
 Set-ExecutionPolicy Bypass -Scope Process -Force
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+iex ((New-Object System.Net.WebClient).DownloadString("https://community.chocolatey.org/install.ps1"))
 '@
-        Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile", "-ExecutionPolicy Bypass", "-Command", $chocoInstallCmd -Wait
-    }
-
-    # Install Miniconda in JustMe mode (no elevation)
-    $minicondaParams = "'/AddToPath:1 /InstallationType:JustMe /RegisterPython:1'"
-    Write-Info "Installing Miniconda (JustMe mode, no elevation)..."
-    choco install miniconda3 --params=$minicondaParams -y
-
-    # Temp PATH update for current session
-    $condaRoot = "$env:USERPROFILE\Miniconda3"
-    $env:PATH = "$condaRoot;$condaRoot\Scripts;$condaRoot\Library\bin;$env:PATH"
-
-    if (Get-Command conda -ErrorAction SilentlyContinue) {
-        Write-Info "Miniconda installed and PATH updated for this session."
-    }
-    else {
-        Write-ErrorMsg "Miniconda installation completed but 'conda' not found."
-        exit 1
+            Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile", "-ExecutionPolicy Bypass", "-Command", $chocoInstallCmd -Wait
+        }
+        choco install miniconda3 --params="'/AddToPath:1 /InstallationType:JustMe /RegisterPython:1'" -y
+        $condaRoot = "$env:USERPROFILE\Miniconda3"
+        $env:PATH = "$condaRoot;$condaRoot\Scripts;$condaRoot\condabin;$condaRoot\Library\bin;$env:PATH"
+        if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
+            Write-Log "Miniconda installation completed but 'conda' not found." "ERROR"
+            exit 11
+        }
+    } catch {
+        Write-Log "Miniconda installation failed: $($_.Exception.Message)" "ERROR"
+        exit 11
     }
 }
 
-# --- Load config ---
-if (-not (Test-Path $ConfigPath)) {
-    Write-ErrorMsg "Config file not found: $ConfigPath"
-    exit 1
-}
+Write-Log "Launcher started with config: $ConfigPath"
 
-try {
-    $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-}
-catch {
-    Write-ErrorMsg "Failed to parse config file: $($_.Exception.Message)"
-    exit 1
-}
-
-Write-Info "Launcher started with config: $ConfigPath"
-
-# --- Resolve key config values ---
-$EnvRoot        = if ($config.EnvPath) { $config.EnvPath } else { "C:\conda_envs" }
-$EnvName        = if ($config.EnvName) { $config.EnvName } else { "WhisperX" }
+$EnvRoot        = $config.EnvPath
+$EnvName        = $config.EnvName
 $FinalEnvPath   = Join-Path $EnvRoot $EnvName
-$PythonVersion  = if ($config.PythonVersion) { $config.PythonVersion } else { "3.10.18" }
-$CudaTarget     = if ($config.CudaTarget) { $config.CudaTarget } else { "" }
+$PythonVersion  = $config.PythonVersion
+$CudaTarget     = $config.CudaTarget
 $UseGPU         = [bool]$config.UseGPU
 $UseSystemFfmpeg= [bool]$config.UseSystemFfmpeg
 $FfmpegPath     = $config.FfmpegPath
 $InstallConda   = [bool]$config.InstallConda
 
 # --- Conda bootstrap ---
-Write-Info "Checking for Conda..."
+Write-Log "Checking for Conda..."
 if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    Write-Warn "Conda not found"
+    Write-Log "Conda not found"
     if ($InstallConda) {
         Install-Conda
-    }
-    else {
-        Write-ErrorMsg "Conda not found and InstallConda=false."
-        exit 1
+    } else {
+        Write-Log "Conda not found and InstallConda=false." "ERROR"
+        exit 10
     }
 }
 
 # --- Environment creation ---
-Write-Info "Ensuring environment at $FinalEnvPath"
+Write-Log "Ensuring environment at $FinalEnvPath"
 if (-not (Test-Path $FinalEnvPath)) {
-    Retry-Command -What "conda env creation" -Script {
+    if (-not (Retry-Command -What "conda env creation" -MaxRetries $config.RetryCount -DelaySeconds $config.BackoffSeconds -Script {
         & conda create -y -p $FinalEnvPath python=$PythonVersion
+    })) {
+        Write-Log "Failed to create Conda environment." "ERROR"
+        exit 20
     }
-}
-else {
-    Write-Info "Using existing environment at $FinalEnvPath"
-}
-
-# --- CUDA check ---
-Write-Info "Checking for CUDA..."
-try {
-    $cudaVersion = & nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>$null
-    if ($cudaVersion) {
-        Write-Info "CUDA driver version detected: $cudaVersion"
-    }
-    else {
-        Write-Warn "No NVIDIA GPU detected or nvidia-smi not available."
-    }
-}
-catch {
-    Write-Warn "Unable to query CUDA: $($_.Exception.Message)"
 }
 
 # --- PyTorch install ---
-Write-Info "Installing PyTorch..."
+Write-Log "Installing PyTorch..."
 $torchIndex = ""
 if ($UseGPU -and $CudaTarget) { $torchIndex = "https://download.pytorch.org/whl/$CudaTarget" }
 elseif (-not $UseGPU) { $torchIndex = "https://download.pytorch.org/whl/cpu" }
 
 if ($torchIndex) {
-    Retry-Command -What "PyTorch install" -Script {
+    if (-not (Retry-Command -What "PyTorch install" -MaxRetries $config.RetryCount -DelaySeconds $config.BackoffSeconds -Script {
         & conda run -p $FinalEnvPath python -m pip install --upgrade --index-url $torchIndex torch torchaudio
+    })) {
+        Write-Log "PyTorch installation failed." "ERROR"
+        exit 30
     }
 }
 
 # --- WhisperX install ---
-Write-Info "Installing WhisperX..."
-Retry-Command -What "WhisperX install" -Script {
+Write-Log "Installing WhisperX..."
+if (-not (Retry-Command -What "WhisperX install" -MaxRetries $config.RetryCount -DelaySeconds $config.BackoffSeconds -Script {
     & conda run -p $FinalEnvPath python -m pip install whisperx
+})) {
+    Write-Log "WhisperX installation failed." "ERROR"
+    exit 31
 }
 
 # --- ffmpeg handling ---
-Write-Info "Checking for ffmpeg..."
-if ($UseSystemFfmpeg -and $FfmpegPath) {
-    if (Test-Path $FfmpegPath) {
-        $ffDir = Split-Path -Parent $FfmpegPath
-        $env:PATH = "$ffDir;$($env:PATH)"
-        Write-Info "Using system ffmpeg at $FfmpegPath"
+Write-Log "Checking for ffmpeg..."
+try {
+    if ($UseSystemFfmpeg -and $FfmpegPath) {
+        if (Test-Path $FfmpegPath) {
+            $ffDir = Split-Path -Parent $FfmpegPath
+            $env:PATH = "$ffDir;$($env:PATH)"
+            Write-Log "Using system ffmpeg at $FfmpegPath"
+        } else {
+            Write-Log "FfmpegPath not found: $FfmpegPath" "ERROR"
+            exit 40
+        }
+    } elseif (-not $UseSystemFfmpeg) {
+        if (-not (Retry-Command -What "imageio-ffmpeg install" -MaxRetries $config.RetryCount -DelaySeconds $config.BackoffSeconds -Script {
+            & conda run -p $FinalEnvPath python -m pip install --upgrade imageio-ffmpeg
+        })) {
+            Write-Log "imageio-ffmpeg installation failed." "ERROR"
+            exit 40
+        }
     }
-    else {
-        Write-Warn "FfmpegPath not found: $FfmpegPath. Please verify path or set UseSystemFfmpeg=false to auto-install."
-    }
-}
-elseif (-not $UseSystemFfmpeg) {
-    Write-Info "Installing imageio-ffmpeg into environment..."
-    Retry-Command -What "imageio-ffmpeg install" -Script {
-        & conda run -p $FinalEnvPath python -m pip install --upgrade imageio-ffmpeg
-    }
-    Write-Info "imageio-ffmpeg installed. WhisperX will use its bundled ffmpeg binary."
+} catch {
+    Write-Log "ffmpeg setup failed: $($_.Exception.Message)" "ERROR"
+    exit 40
 }
 
 # --- Launch WhisperX GUI ---
-$guiPath = if ($config.ScriptPath) { $config.ScriptPath } else { Join-Path $PSScriptRoot "whisperx_gui.py" }
-
+$guiPath = Join-Path $ScriptDir "whisperx_gui.py"
 if (-not (Test-Path $guiPath)) {
-    Write-ErrorMsg "GUI script not found: $guiPath"
-    exit 1
+    Write-Log "GUI script not found: $guiPath" "ERROR"
+    exit 50
 }
-
-$guiArgs = @()
-if ($config.model)       { $guiArgs += @("--default-model", $config.model) }
-if ($config.output_dir)  { $guiArgs += @("--output-dir", $config.output_dir) }
-if ($config.HuggingFaceToken) { $env:HUGGINGFACE_TOKEN = $config.HuggingFaceToken }
 
 try {
-    Write-Info "Launching WhisperX GUI..."
-    & conda run -p $FinalEnvPath python $guiPath @guiArgs
-    Write-Info "WhisperX GUI closed."
-}
-catch {
-    Write-ErrorMsg "Error launching GUI: $($_.Exception.Message)"
-    exit 1
+    Write-Log "Launching WhisperX GUI..."
+    & conda run -p $FinalEnvPath python $guiPath
+    $guiExit = $LASTEXITCODE
+    if ($guiExit -ne 0) {
+        Write-Log "WhisperX GUI exited with code $guiExit" "ERROR"
+        exit 50
+    }
+    Write-Log "WhisperX GUI closed successfully." "OK"
+} catch {
+    Write-Log "Error launching GUI: $($_.Exception.Message)" "ERROR"
+    exit 50
 }
 
-Write-Info "All tasks completed successfully."
+Write-Log "All tasks completed successfully." "OK"
 exit 0

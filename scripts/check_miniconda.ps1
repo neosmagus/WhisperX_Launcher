@@ -1,61 +1,92 @@
+param(
+    [switch]$Json,
+    [string]$ConfigPath = "$(Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) '..\whisperx_config.json')"
+)
+
 $ErrorActionPreference = 'Stop'
 
-Write-Host "=== Miniconda Installation Check ===" -ForegroundColor Cyan
+# --- Load config ---
+if (-not (Test-Path $ConfigPath)) {
+    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    exit 1
+}
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+
+# --- Resolve log directory ---
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$LogDir = if ($config.LogPath) { Resolve-Path (Join-Path $ScriptDir $config.LogPath) } else { Join-Path $ScriptDir '..\logs' }
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
+
+# --- Create log file ---
+$LogFile = Join-Path $LogDir ("check_miniconda_log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $line = "[$ts] [$Level] $Message"
+    switch ($Level) {
+        "WARN"  { Write-Host $line -ForegroundColor Yellow }
+        "ERROR" { Write-Host $line -ForegroundColor Red }
+        "OK"    { Write-Host $line -ForegroundColor Green }
+        default { Write-Host $line -ForegroundColor Gray }
+    }
+    Add-Content -Path $LogFile -Value $line
+}
+
+Write-Log "=== Miniconda Installation Check ===" "INFO"
 
 # Common Miniconda install locations
 $locations = @(
-    "$env:USERPROFILE\Miniconda3",         # Single-user default
-    "$env:LOCALAPPDATA\Miniconda3",        # Single-user local app data
-    "$env:ALLUSERSPROFILE\Miniconda3",     # System-wide (all users)
-    "C:\ProgramData\Miniconda3",           # Alternate system-wide
-    "C:\Miniconda3"                         # Legacy/manual installs
+    "$env:USERPROFILE\Miniconda3",
+    "$env:LOCALAPPDATA\Miniconda3",
+    "$env:ALLUSERSPROFILE\Miniconda3",
+    "C:\ProgramData\Miniconda3",
+    "C:\Miniconda3"
 )
 
-# Track results
 $results = @()
+$foundValid = $false
 
 foreach ($loc in $locations) {
     if (Test-Path $loc) {
         $condaExe = Join-Path $loc "Scripts\conda.exe"
-        if (Test-Path $condaExe) {
+        $condaBat = Join-Path $loc "condabin\conda.bat"
+        if (Test-Path $condaExe -or Test-Path $condaBat) {
             $status = "Installed"
-            $color = "Green"
+            $color = "OK"
+            $foundValid = $true
         } else {
-            $status = "Partial (folder exists, conda.exe missing)"
-            $color = "Yellow"
+            $status = "Partial (folder exists, conda not found)"
+            $color = "WARN"
         }
     } else {
         $status = "Not found"
-        $color = "DarkGray"
+        $color = "INFO"
     }
-
-    Write-Host ("{0,-50} {1}" -f $loc, $status) -ForegroundColor $color
-    $results += [PSCustomObject]@{
-        Path   = $loc
-        Status = $status
-    }
+    Write-Log ("{0,-50} {1}" -f $loc, $status) $color
+    $results += [PSCustomObject]@{ Path = $loc; Status = $status }
 }
 
-# Check PATH environment variables for Miniconda references
-Write-Host "`n=== PATH Variable Check ===" -ForegroundColor Cyan
-$pathVars = @(
-    [Environment]::GetEnvironmentVariable("Path", "User"),
-    [Environment]::GetEnvironmentVariable("Path", "Machine")
-)
-
-$foundInPath = $false
+# PATH variable check
+Write-Log "=== PATH Variable Check ===" "INFO"
 foreach ($scope in @("User", "Machine")) {
     $pathValue = [Environment]::GetEnvironmentVariable("Path", $scope)
-    if ($pathValue -match "Miniconda3") {
-        Write-Host "$scope PATH contains Miniconda reference" -ForegroundColor Yellow
-        $foundInPath = $true
+    $matches = $pathValue -split ';' | Where-Object {$_ -match "(?i)Miniconda3"}
+    if ($matches) {
+        Write-Log "$scope PATH contains Miniconda reference(s):" "WARN"
+        foreach ($m in $matches) { Write-Log "  $m" "WARN" }
     } else {
-        Write-Host "$scope PATH has no Miniconda reference" -ForegroundColor DarkGray
+        Write-Log "$scope PATH has no Miniconda reference" "INFO"
     }
 }
 
-if (-not $foundInPath) {
-    Write-Host "No Miniconda references found in PATH." -ForegroundColor Green
+if (-not $foundValid) {
+    Write-Log "No valid Miniconda installation detected." "ERROR"
 }
 
-Write-Host "`nCheck complete."
+if ($Json) {
+    $results | ConvertTo-Json -Depth 2
+}
+
+# Exit code: 0 if found valid install, 1 otherwise
+if ($foundValid) { exit 0 } else { exit 1 }
