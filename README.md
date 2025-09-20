@@ -1,198 +1,142 @@
-# WhisperX One‑Click Transcription Tool (Console‑Only)
+# WhisperX Toolchain
 
-A portable, self‑contained setup for running WhisperX with optional speaker diarization.  
-Includes a universal batch launcher that always runs in console mode and reads all runtime options from a JSON config file.
+A streamlined, GUI‑driven workflow for installing, running, and uninstalling WhisperX with optional speaker diarization.
 
-## 🚀 Quick Start
+---
 
-1. **Download & Extract**
-   - Get the release ZIP and extract to `C:\WhisperX\`
+## 📦 Features
+- One‑click install & launch via WhisperX_Launcher.bat
+- GUI transcription with model/format selection
+- Optional diarization with Hugging Face token
+- Pre‑flight diarization check with clear status messages
+- Config‑driven defaults for model, output dir, and token
+- Step‑aware uninstall with cleanup mode
+- Persistent logs for troubleshooting
 
-2. **Edit Config**
-   - Open `whisperx_config.json`
-   - Minimal working example:
-     ```json
-     {
-       "UseConfig": true,
-       "model": "base",
-       "input_file": "input_audio.wav",
-       "output_format": "srt",
-       "output_dir": "output",
-       "diarize": false,
-       "InstallConda": true
-     }
-     ```
+---
 
-3. **Run**
-   - Double‑click `WhisperX_Launcher.bat`
-   - Or run in PowerShell:
-     ```powershell
-     .\whisperx_launcher.ps1 -ConfigPath "whisperx_config.json"
-     ```
+## 🚀 Usage
 
-## Installation
+### 1. Install & Launch
+1. Ensure dependencies are installed (see Dependencies).
+2. Double‑click WhisperX_Launcher.bat.
+3. The launcher will:
+   - Install Miniconda (if missing and enabled in config)
+   - Create the WhisperX environment
+   - Install PyTorch, WhisperX, and ffmpeg
+   - Launch the GUI
 
-1. Download the release ZIP (or clone this repo).
-2. Extract everything into a folder, e.g.: C:\WhisperX\
-3. You should see:
-- `WhisperX_Launcher.bat`
-- `whisperx_launcher.ps1`
-- `whisperx_config.json`
-- (Optional) `icon\` for shortcuts
+### 2. GUI Basics
+- Audio/Video File: Select the file to transcribe.
+- Whisper Model: Choose from tiny, base, small, medium, large‑v2.
+- Output Format: txt, json, srt, or vtt.
+- Output Directory: Optional; defaults to the input file’s folder.
+- Hugging Face Token: Required for diarization unless model is already cached.
+- Diarization Status: Shows readiness or setup instructions.
+- Live Log: Displays real‑time output and errors.
 
-Optional: Create a desktop shortcut
-- Right‑click `WhisperX_Launcher.bat` → **Send to → Desktop (create shortcut)**
-- Right‑click the shortcut → **Properties → Change Icon…** → choose an `.ico` from `.\icon`
-- Name it: **WhisperX – Console Launcher**
+Click Transcribe to start. The GUI remains responsive during processing.
 
-## Running the tool
+---
 
-### Option 1 — Recommended: `.bat` universal launcher
-- Double‑click `WhisperX_Launcher.bat`.
-- Behavior:
-  - Always runs `whisperx_launcher.ps1` in console mode.
-  - Reads all runtime options from the JSON config file.
-  - Sets up Miniconda and the WhisperX environment if needed.
-  - Runs WhisperX transcription directly in the console.
+## 🗑 Uninstall
 
-### Option 2 — Run the `.ps1` launcher directly
-1. Open PowerShell.
-2. `cd "C:\WhisperX"`
-3. Run:
-   ```powershell
-   .\whisperx_launcher.ps1 -ConfigPath "whisperx_config.json"
-4. 	If you get an execution policy error (first run on some systems):
-    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Run uninstall_whisperx.bat to remove:
+- WhisperX Conda environment
+- Miniconda (if installed by the launcher)
+- Chocolatey (if installed by the launcher)
+- PATH entries and cache folders
 
-## Configuration via `whisperx_config.json`
+Cleanup Mode:
+If uninstall fails or leaves remnants, run:
+    uninstall_whisperx.bat -Cleanup
+This force‑deletes leftover files and PATH entries.
 
-The launcher reads settings from `whisperx_config.json` in the same folder (or from a path you pass to the `.bat` or `.ps1`).  
-If `UseConfig = true`, the launcher runs unattended and never prompts; missing critical values cause a clear failure.
+---
 
-### Config schema (console‑only version)
+## 🛠 Manual / Recovery Instructions
 
-| Key              | Type    | Default       | Description                                           |
-| ---------------- | ------- | ------------- | ----------------------------------------------------- |
-| UseConfig        | bool    | true          | Unattended mode toggle                                |
-| EnvPath          | string  | C:\conda_envs | Root folder for Conda envs                            |
-| EnvName          | string  | WhisperX      | Environment name                                      |
-| PythonVersion    | string  | 3.10.18       | Python version to install                             |
-| CudaTarget       | string  | ""            | PyTorch CUDA target (e.g. cu118)                      |
-| UseGPU           | bool    | false         | Install GPU PyTorch                                   |
-| model            | string  | base          | WhisperX model to use (`tiny`…`large-v2`)             |
-| input_file       | string  | *(none)*      | Path to audio/video file to transcribe (**required**) |
-| output_format    | string  | srt           | Output format: txt, json, srt, vtt                    |
-| output_dir       | string  | output        | Output directory                                      |
-| diarize          | bool    | false         | Enable speaker diarization                            |
-| extra_args       | array   | []            | Additional CLI args (e.g. `["--language","en"]`)      |
-| HuggingFaceToken | string  | ""            | Token for diarization models                          |
-| DiarizeOnFirstRun| bool    | false         | Cache diarization model at setup                      |
-| UseSafe          | bool    | true          | Avoid pre-release packages                            |
-| UseSystemFfmpeg  | bool    | false         | Use system ffmpeg                                     |
-| FfmpegPath       | string  | ""            | Path to system ffmpeg binary                          |
-| RetryCount       | int     | 3             | Network retry attempts                                |
-| BackoffSeconds   | int     | 5             | Delay between retries                                 |
-| LogTimestamps    | bool    | true          | Prefix log lines with timestamps                      |
-| ScriptPath       | string  | ""            | Path to whisperx_gui.py (unused in console-only mode) |
-| InstallConda     | bool    | true          | Install Miniconda if missing                          |
+If the launcher fails:
+1. Check the exit code in the console or log file.
+2. Refer to the error message for targeted recovery:
+   - 10 → Conda missing (enable InstallConda or install manually)
+   - 11 → Miniconda install failed
+   - 20 → Environment creation failed
+   - 30 → PyTorch install failed
+   - 31 → WhisperX install failed
+   - 40 → ffmpeg setup failed
+   - 50 → GUI launch failed
+   - 60–63 → Diarization issues (see Diarization Setup)
+3. Fix the issue and re‑run the launcher.
 
-### Diarization setup
-Tokens and model terms acceptance are required on Hugging Face for diarization.
+---
 
-1. Log in to Hugging Face:  
-   https://huggingface.co/
-2. Accept model terms:  
-   - https://huggingface.co/pyannote/speaker-diarization-3.1  
-   - https://huggingface.co/pyannote/segmentation-3.0  
+## 📋 Dependencies
+
+- Windows 10/11
+- PowerShell 5.1+ or PowerShell Core (pwsh)
+- Miniconda (auto‑installed if enabled in config)
+- Chocolatey (auto‑installed if needed for Miniconda)
+- Python (managed inside Conda env)
+- ffmpeg (system or auto‑installed via imageio‑ffmpeg)
+
+---
+
+## 🗣 Diarization Setup
+
+To enable diarization:
+1. Create a free Hugging Face account.
+2. Accept the terms for:
+   - https://huggingface.co/pyannote/speaker-diarization-3.1
+   - https://huggingface.co/pyannote/segmentation-3.0
    - https://huggingface.co/pyannote/embedding
-3. Create a READ access token:  
-   https://huggingface.co/settings/tokens → New token → “Read”
-4. Add your token to `HuggingFaceToken` in the config.
+3. Generate a READ token: https://huggingface.co/settings/tokens
+4. Enter the token in the GUI or save it in Settings.
 
-If you skip these steps:
-- Diarization will be disabled unless models are already cached locally.
-- Transcription still works; text won’t be split by speaker.
+---
 
-## What’s included
+## 🐞 Basic Troubleshooting
 
-- **WhisperX_Launcher.bat**  
-  - One‑file universal launcher  
-  - Always runs in console mode  
-  - Passes config path to PowerShell script
-- **whisperx_launcher.ps1**  
-  - Reads config JSON  
-  - Sets up Conda env (GPU or CPU)  
-  - Installs PyTorch and WhisperX  
-  - Installs diarization dependencies (optional)  
-  - Runs WhisperX transcription with retries
-- **whisperx_config.json**  
-  - Stores all runtime options
+- GUI won’t launch → Check LogPath for the latest launcher_log_*.txt.
+- Diarization skipped → Provide a valid Hugging Face token.
+- Model download fails → Check internet connection and token validity.
+- ffmpeg errors → Verify FfmpegPath in config or allow auto‑install.
+- Permission errors → Run .bat files as Administrator.
 
-## Tools and dependencies
+---
 
-- WhisperX — transcription with word‑level timestamps
-- PyTorch — model runtime (CPU or CUDA)
-- PyAnnote — speaker diarization pipeline
-- Miniconda — environment manager for isolated Python setup
-- Chocolatey — Windows package manager to install Miniconda if missing
-- imageio‑ffmpeg — bundled ffmpeg binaries for media decoding
+## ⚙ Config (whisperx_config.json)
 
-## Manual install (if you don’t want the launchers)
+Example:
+    {
+      "EnvPath": "envs",
+      "EnvName": "whisperx",
+      "PythonVersion": "3.10",
+      "CudaTarget": "cu118",
+      "UseGPU": true,
+      "UseSystemFfmpeg": false,
+      "FfmpegPath": "",
+      "InstallConda": true,
+      "RetryCount": 3,
+      "BackoffSeconds": 5,
+      "LogPath": "logs",
+      "model": "large-v2",
+      "output_dir": "",
+      "HuggingFaceToken": ""
+    }
 
-1. Install Miniconda:  
-   https://docs.conda.io/en/latest/miniconda.html
-2. Create and activate an environment:  
-   ```powershell
-   conda create -n whisperx python=3.10
-   conda activate whisperx
-3. Install PyTorch (choose one):
-   - GPU (CUDA 12.1):
-   pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
-   - CPU only:
-   pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
-4. Install WhisperX:
-   pip install whisperx
-5. Optional diarization deps:
-   pip install pyannote.audio pyannote.pipeline
-6. Utilities:
-   pip install imageio-ffmpeg matplotlib
-   Optional: ffmpeg on PATH (if you prefer system ffmpeg)
-   https://ffmpeg.org/download.html
-   Add ffmpeg\bin to your PATH
+Most‑edited fields:
+- model → Default Whisper model.
+- output_dir → Default output directory.
+- HuggingFaceToken → Token for diarization.
+- UseGPU → true for GPU, false for CPU.
+- CudaTarget → Match your GPU/CUDA version.
+- InstallConda → Auto‑install Miniconda if missing.
 
-## Running WhisperX from the command line
+---
 
-If you prefer not to use the launcher:
+## 📄 License
 
-1. Activate the Conda environment: conda activate whisperx
-2. Basic transcription: whisperx "path\to\audio.mp3" --model large-v2 --output_format json
-3. With diarization: whisperx "path\to\audio.mp3" --model large-v2 --output_format json --diarize --hf_token YOUR_HF_READ_TOKEN
-
-### Common flags
-- `--model`: `tiny` | `base` | `small` | `medium` | `large-v2`
-- `--output_format`: `txt` | `json` | `srt` | `vtt`
-- `--diarize`: enable speaker diarization (requires accepted models + token unless cached)
-- `--hf_token`: your Hugging Face READ token
-
-### Output
-- Files are saved next to your audio/video (e.g., `.json`, `.srt`, `.vtt`, `.txt`)
-- If you specify `--output_dir`, files are saved there instead
-- JSON output contains word‑level timestamps; SRT/VTT are subtitle‑ready
-- If diarization is enabled, output is segmented by speaker
-
-## Troubleshooting
-
-- **First run is slow:**  
-  Models and dependencies are downloading/caching. Subsequent runs are faster.
-
-- **Execution policy blocks `.ps1`:**  
-  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-- **CUDA mismatch:
-  If GPU install fails, check driver/CUDA runtime compatibility.
-- **Change or reset saved paths:
-  Delete %userprofile%\.whisperx_launcher_settings.json (only relevant if you later add GUI mode back).
-
-## License
-
-This project automates setup and usage for WhisperX and related tools.  
-See upstream projects for their licenses and terms.
+This toolchain wraps WhisperX (MIT License) and Pyannote.audio (various licenses).
+See their repositories for license details.
+All batch/PowerShell/GUI scripts in this repo are released under the MIT License.

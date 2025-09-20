@@ -1,67 +1,133 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
-set "SCRIPT_PATH=%~dp0uninstall_whisperx_full.ps1"
+REM === WhisperX Uninstall Utility ===
+
+set "ROOT_DIR=%~dp0"
+set "SCRIPT_PATH=%ROOT_DIR%scripts\uninstall_whisperx_full.ps1"
+set "CONFIG_FILE=%ROOT_DIR%whisperx_config.json"
 
 echo ============================================================
-echo WhisperX Uninstall Utility
+echo   WhisperX Uninstall Utility
 echo ------------------------------------------------------------
-echo This tool will:
-echo   - Remove the WhisperX Conda environment.
-echo   - Detect Miniconda and Chocolatey installations.
-echo   - Ask if you want to uninstall each one.
-echo   - Only remove PATH entries if uninstall succeeds.
-echo.
-echo CLEANUP MODE:
-echo   If enabled, the script will force-delete leftover folders
-echo   and files from failed or partial uninstalls.
-echo   Use this if a previous uninstall failed or left remnants.
-echo   WARNING: This is more aggressive and cannot be undone.
+echo   Removing WhisperX environment and related components...
+echo   Please wait while the process completes.
 echo ============================================================
 echo.
 
-:: Prompt for cleanup mode
-set "CLEANUP_FLAG="
-set /p CLEANUP_CHOICE=Run in cleanup mode? (y/n): 
-if /I "%CLEANUP_CHOICE%"=="y" set "CLEANUP_FLAG=-Cleanup"
-
-:: Check for admin rights
-net session >nul 2>&1
-if %errorLevel% NEQ 0 (
-    echo Requesting elevation...
-    powershell -NoProfile -Command ^
-        "$argsList = @('-NoProfile','-ExecutionPolicy','Bypass','-File','%SCRIPT_PATH%');" ^
-        "if ('%CLEANUP_FLAG%' -ne '') { $argsList += '%CLEANUP_FLAG%' };" ^
-        "Start-Process 'powershell.exe' -ArgumentList $argsList -Verb RunAs -Wait"
-    set "EXITCODE=%ERRORLEVEL%"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_PATH%" %CLEANUP_FLAG%
-    set "EXITCODE=%ERRORLEVEL%"
-)
-
-:: After PowerShell finishes, try to open the latest log file
-set "LOGFILE_FOUND="
-for /f "delims=" %%L in ('dir /b /a:-d /o:-d "%~dp0uninstall_log_*.txt" 2^>nul') do (
-    start notepad "%~dp0%%L"
-    set "LOGFILE_FOUND=1"
-    goto afterlog
-)
-
-:afterlog
-:: Default to error if EXITCODE is blank
-if "%EXITCODE%"=="" set "EXITCODE=1"
-
-:: Pause only if there was an error
-if not "%EXITCODE%"=="0" (
-    echo.
-    echo One or more warnings or errors occurred during uninstall.
-    if defined LOGFILE_FOUND (
-        echo Review the log file that just opened for details.
-    ) else (
-        echo No log file found - check script output above.
-    )
-    echo.
+REM --- Check PS1 exists ---
+if not exist "%SCRIPT_PATH%" (
+    echo [ERROR] Could not find uninstall_whisperx_full.ps1 in "%ROOT_DIR%scripts"
     pause
+    exit /b 1
 )
 
+REM --- Check config exists ---
+if not exist "%CONFIG_FILE%" (
+    echo [ERROR] Could not find config file: "%CONFIG_FILE%"
+    pause
+    exit /b 1
+)
+
+REM --- Read LogPath from config ---
+for /f "usebackq tokens=* delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "(Get-Content '%CONFIG_FILE%' -Raw | ConvertFrom-Json).LogPath"`) do (
+    set "LOG_PATH=%%~A"
+)
+if not defined LOG_PATH set "LOG_PATH=logs"
+if not exist "%ROOT_DIR%%LOG_PATH%" mkdir "%ROOT_DIR%%LOG_PATH%"
+
+REM --- Check for -Cleanup argument ---
+set "CLEANUP_FLAG="
+for %%A in (%*) do (
+    if /I "%%~A"=="-Cleanup" set "CLEANUP_FLAG=-Cleanup"
+)
+if defined CLEANUP_FLAG goto run_cleanup
+
+REM --- Run normal uninstall ---
+where pwsh >nul 2>&1
+if %errorlevel%==0 (
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_PATH%" -ConfigPath "%CONFIG_FILE%"
+    set "EXITCODE=%ERRORLEVEL%"
+    goto check_exit
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_PATH%" -ConfigPath "%CONFIG_FILE%"
+set "EXITCODE=%ERRORLEVEL%"
+goto check_exit
+
+:run_cleanup
+echo [INFO] Running in cleanup mode...
+where pwsh >nul 2>&1
+if %errorlevel%==0 (
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_PATH%" -ConfigPath "%CONFIG_FILE%" -Cleanup
+    set "EXITCODE=%ERRORLEVEL%"
+    goto check_exit
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_PATH%" -ConfigPath "%CONFIG_FILE%" -Cleanup
+set "EXITCODE=%ERRORLEVEL%"
+goto check_exit
+
+:check_exit
+if "%EXITCODE%"=="0" goto end
+
+echo.
+echo ============================================================
+echo   Uninstall encountered issues. Exit code: %EXITCODE%
+echo ------------------------------------------------------------
+
+if "%EXITCODE%"=="10" goto err_env_remove
+if "%EXITCODE%"=="11" goto err_miniconda_remove
+if "%EXITCODE%"=="12" goto err_choco_remove
+if "%EXITCODE%"=="20" goto err_path_cleanup
+if "%EXITCODE%"=="30" goto err_file_cleanup
+goto err_generic
+
+:err_env_remove
+echo   Failed to remove WhisperX Conda environment.
+echo   Check if the environment is in use or locked.
+goto offer_cleanup
+
+:err_miniconda_remove
+echo   Failed to uninstall Miniconda.
+echo   Ensure no other Conda environments are active.
+goto offer_cleanup
+
+:err_choco_remove
+echo   Failed to uninstall Chocolatey.
+echo   You may need to remove it manually via Control Panel or scripts.
+goto offer_cleanup
+
+:err_path_cleanup
+echo   Failed to clean PATH environment variables.
+echo   You may need to edit PATH manually to remove WhisperX/Conda entries.
+goto offer_cleanup
+
+:err_file_cleanup
+echo   Failed to delete leftover files/folders.
+echo   They may be locked by another process.
+goto offer_cleanup
+
+:err_generic
+echo   An unknown error occurred during uninstall.
+goto offer_cleanup
+
+:offer_cleanup
+echo.
+echo   You can try running in CLEANUP MODE to:
+echo     - Force-delete leftover folders/files.
+echo     - Remove PATH entries even if uninstall failed.
+echo     - Purge partial Miniconda/Chocolatey installs.
+echo.
+echo   WARNING: Cleanup mode is aggressive and cannot be undone.
+echo   To run cleanup directly in future, pass the -Cleanup argument:
+echo     uninstall_whisperx.bat -Cleanup
+echo.
+set /p RUN_CLEANUP=Do you want to run cleanup mode now? (y/n): 
+if /I "!RUN_CLEANUP!"=="y" goto run_cleanup
+goto end
+
+:end
 endlocal
+exit /b %EXITCODE%
