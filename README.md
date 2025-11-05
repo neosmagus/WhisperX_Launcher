@@ -12,19 +12,33 @@ A streamlined, GUI‑driven workflow for installing, running, and uninstalling W
 - Config‑driven defaults for model, output dir, and token
 - Step‑aware uninstall with cleanup mode
 - Persistent logs for troubleshooting
+- Automatic desktop shortcut creation pointing to run_whisperx.bat with custom icon
 
 ---
 
 ## 🚀 Usage
 
 ### 1. Install & Launch
+
+**Option A — Safe one‑click (recommended for first‑time users)**
 1. Ensure dependencies are installed (see Dependencies).
-2. Double‑click WhisperX_Launcher.bat.
+2. Double‑click `WhisperX_Launcher.bat`
 3. The launcher will:
    - Install Miniconda (if missing and enabled in config)
    - Create the WhisperX environment
    - Install PyTorch, WhisperX, and ffmpeg
    - Launch the GUI
+
+**Option B — Manual install and run (for advanced users)**
+1. Double‑click `install_whisperx.bat` to install/update only.
+2. Double‑click `run_whisperx.bat` to launch the GUI without install checks.
+
+During install:
+- The script will create a desktop shortcut named **"WhisperX"**
+- The shortcut points to `run_whisperx.bat` and uses `icons\WhisperX_Launcher.ico`
+- You can use this shortcut for all future launches
+
+---
 
 ### 2. GUI Basics
 - Audio/Video File: Select the file to transcribe.
@@ -35,21 +49,21 @@ A streamlined, GUI‑driven workflow for installing, running, and uninstalling W
 - Diarization Status: Shows readiness or setup instructions.
 - Live Log: Displays real‑time output and errors.
 
-Click Transcribe to start. The GUI remains responsive during processing.
+Click **Transcribe** to start. The GUI remains responsive during processing.
 
 ---
 
 ## 🗑 Uninstall
 
-Run uninstall_whisperx.bat to remove:
+Run `uninstall_whisperx.bat` to remove:
 - WhisperX Conda environment
 - Miniconda (if installed by the launcher)
 - Chocolatey (if installed by the launcher)
 - PATH entries and cache folders
 
-Cleanup Mode:
-If uninstall fails or leaves remnants, run:
-    uninstall_whisperx.bat -Cleanup
+**Cleanup Mode**  
+If uninstall fails or leaves remnants, run:  
+`uninstall_whisperx.bat -Cleanup`  
 This force‑deletes leftover files and PATH entries.
 
 ---
@@ -97,46 +111,76 @@ To enable diarization:
 
 ## 🐞 Basic Troubleshooting
 
-- GUI won’t launch → Check LogPath for the latest launcher_log_*.txt.
+- GUI won’t launch → Check LogPath for the latest `launcher_log_*.txt`.
 - Diarization skipped → Provide a valid Hugging Face token.
 - Model download fails → Check internet connection and token validity.
-- ffmpeg errors → Verify FfmpegPath in config or allow auto‑install.
-- Permission errors → Run .bat files as Administrator.
+- ffmpeg errors → Verify `FfmpegPath` in config or allow auto‑install.
+- Permission errors → Run `.bat` files as Administrator.
 
 ---
 
 ## ⚙ Config (whisperx_config.json)
 
 Example:
-    {
-      "EnvPath": "envs",
-      "EnvName": "whisperx",
-      "PythonVersion": "3.10",
-      "CudaTarget": "cu118",
-      "UseGPU": true,
-      "UseSystemFfmpeg": false,
-      "FfmpegPath": "",
-      "InstallConda": true,
-      "RetryCount": 3,
-      "BackoffSeconds": 5,
-      "LogPath": "logs",
-      "model": "large-v2",
-      "output_dir": "",
-      "HuggingFaceToken": ""
-    }
+{
+  "EnvPath": "envs",
+  "EnvName": "whisperx",
+  "PythonVersion": "3.10",
+  "CudaTarget": "cu118",
+  "UseGPU": true,
+  "UseSystemFfmpeg": false,
+  "FfmpegPath": "",
+  "InstallConda": true,
+  "RetryCount": 3,
+  "BackoffSeconds": 5,
+  "LogPath": "logs",
+  "model": "large-v2",
+  "output_dir": "",
+  "HuggingFaceToken": ""
+}
 
 Most‑edited fields:
-- model → Default Whisper model.
-- output_dir → Default output directory.
-- HuggingFaceToken → Token for diarization.
-- UseGPU → true for GPU, false for CPU.
-- CudaTarget → Match your GPU/CUDA version.
-- InstallConda → Auto‑install Miniconda if missing.
+- `model` → Default Whisper model.
+- `output_dir` → Default output directory.
+- `HuggingFaceToken` → Token for diarization.
+- `UseGPU` → true for GPU, false for CPU.
+- `CudaTarget` → Match your GPU/CUDA version.
+- `InstallConda` → Auto‑install Miniconda if missing.
+
+---
+
+## 📁 File Locations
+- **Config**: `whisperx_config.json`
+- **Logs**: `logs/` (or custom path in config)
+- **Scripts**: `scripts/`
+  - GUI in `gui/`
+  - Helpers in `lib/`
+  - PowerShell in `launcher/`
+- **Icons**: `icons/WhisperX_Launcher.ico`
+
+---
+
+## 🖥 Entry Points Summary
+- **WhisperX_Launcher.bat** — Safe one‑click (install if needed, then run)
+- **install_whisperx.bat** — Install/update only
+- **run_whisperx.bat** — Run GUI only
+- **uninstall_whisperx.bat** — Remove environment, logs, and GUI scripts
+- **Desktop Shortcut "WhisperX"** — Runs `run_whisperx.bat` with custom icon
+
+---
+
+## 📌 Quick Command Cheat Sheet
+| Action        | Command / File |
+|---------------|----------------|
+| Install + Run | `WhisperX_Launcher.bat` |
+| Install Only  | `install_whisperx.bat` |
+| Run Only      | `run_whisperx.bat` |
+| Uninstall     | `uninstall_whisperx.bat` |
 
 ---
 
 ## 📄 License
 
-This toolchain wraps WhisperX (MIT License) and Pyannote.audio (various licenses).
-See their repositories for license details.
+This toolchain wraps WhisperX (MIT License) and Pyannote.audio (various licenses).  
+See their repositories for license details.  
 All batch/PowerShell/GUI scripts in this repo are released under the MIT License.

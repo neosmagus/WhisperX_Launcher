@@ -1,0 +1,7 @@
+True
+True
+False
+True
+False
+SHORTCUT_PATH=C:\Users\Robert\OneDrive - HUL International Pty Ltd\Desktop\WhisperX.lnk
+SUMMARY=InstallComplete=True;ShortcutCreated=True;ShortcutPath=C:\Users\Robert\OneDrive - HUL International Pty Ltd\Desktop\WhisperX.lnk;CondaVersion=conda 25.9.0;PythonVersion=3.10.18;CudaTarget=cu118

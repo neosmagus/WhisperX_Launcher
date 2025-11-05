@@ -1,0 +1,22 @@
+{
+  "EnvPath": "C:\\conda_envs",
+  "EnvName": "whisperx",
+  "PythonVersion": "3.10.18",
+  "CudaTarget": "cu118",
+  "UseGPU": false,
+  "model": "base",
+  "output_dir": "output",
+  "diarize": false,
+  "extra_args": [],
+  "HuggingFaceToken": "",
+  "DiarizeOnFirstRun": true,
+  "UseSystemFfmpeg": false,
+  "FfmpegPath": "",
+  "RetryCount": 3,
+  "BackoffSeconds": 5,
+  "LogTimestamps": true,
+  "LogPath": ".\\logs",
+  "InstallConda": true,
+  "CondaInstallerUrl": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe",
+  "AcceptAnacondaTOS": true
+}

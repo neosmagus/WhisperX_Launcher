@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "ms-vscode.powershell",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "redhat.vscode-yaml",
+    "eriklynd.json-tools",
+    "editorconfig.editorconfig",
+    "eamodio.gitlens",
+    "usernamehw.errorlens"
+  ]
+}
