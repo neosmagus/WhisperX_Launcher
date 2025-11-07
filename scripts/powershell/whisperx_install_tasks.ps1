@@ -93,6 +93,16 @@ function Install-CondaEnvironment($cfg) {
     Write-Log "Environment $($cfg.EnvName) ready." "OK"
 }
 
+function Install-Pip($cfg) {
+    if (-not (Invoke-WithRetry -Command @("conda", "install", "-n", $cfg.EnvName, "-y", "pip") `
+                -Description "Installing pip into environment" `
+                -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
+        Write-Log "Failed to install pip into environment $($cfg.EnvName)." "ERROR"
+        exit 32
+    }
+    Write-Log "pip installed successfully in environment $($cfg.EnvName)." "OK"
+}
+
 function Install-PyTorch($cfg) {
     $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
     $envPath = Join-Path $envRoot $cfg.EnvName

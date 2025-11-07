@@ -29,6 +29,7 @@ Write-Log "Starting WhisperX installation..."
 $Summary = @{
     CondaInstalled    = $false
     EnvCreated        = $false
+    PipInstalled      = $false
     PyTorchInstalled  = $false
     WhisperXInstalled = $false
     FfmpegInstalled   = $false
@@ -44,6 +45,7 @@ $stages = @(
     @{ Name = "Configure Conda Channels"; Action = { Set-CondaChannels $cfg } },
     @{ Name = "Update Conda"; Action = { Update-Conda $cfg } },
     @{ Name = "Create Environment"; Action = { Install-CondaEnvironment $cfg; $Summary.EnvCreated = $true } },
+    @{ Name = "Install Pip"; Action = { Install-Pip $cfg; $Summary.PipInstalled = $true } },
     @{ Name = "Install PyTorch"; Action = { Install-PyTorch $cfg; $Summary.PyTorchInstalled = $true } },
     @{ Name = "Install WhisperX"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
     @{ Name = "Install ffmpeg-python"; Action = { Install-FFmpegPython $cfg; $Summary.FfmpegInstalled = $true } },
@@ -71,6 +73,7 @@ Write-Log "Installation complete." "OK"
 Write-Host "`n========== INSTALL SUMMARY ==========" -ForegroundColor Cyan
 Write-Host ("Conda Installed         : {0}" -f $Summary.CondaInstalled)
 Write-Host ("Environment Created     : {0}" -f $Summary.EnvCreated)
+Write-Host ("Pip Installed           : {0}" -f $Summary.PipInstalled)
 Write-Host ("PyTorch Installed       : {0}" -f $Summary.PyTorchInstalled)
 Write-Host ("WhisperX Installed      : {0}" -f $Summary.WhisperXInstalled)
 Write-Host ("ffmpeg-python Installed : {0}" -f $Summary.FfmpegInstalled)
@@ -83,6 +86,7 @@ $condaVersion = conda --version
 $summaryLine = "SUMMARY=" +
 "CondaInstalled=$($Summary.CondaInstalled);" +
 "EnvCreated=$($Summary.EnvCreated);" +
+"PipInstalled=$($Summary.PipInstalled);" +
 "PyTorchInstalled=$($Summary.PyTorchInstalled);" +
 "WhisperXInstalled=$($Summary.WhisperXInstalled);" +
 "FfmpegInstalled=$($Summary.FfmpegInstalled);" +
