@@ -29,12 +29,18 @@ function Add-LogOutput {
 
     if ($Stdout) {
         foreach ($line in $Stdout -split "`r?`n") {
-            if ($line.Trim()) { Write-Log "[$Description][OUT] $line" }
+            if ($line.Trim()) {
+                Write-Log "[$Description][OUT] $line"
+                if ($Debug) { Write-Host "[$Description][OUT] $line" -ForegroundColor Gray }
+            }
         }
     }
     if ($Stderr) {
         foreach ($line in $Stderr -split "`r?`n") {
-            if ($line.Trim()) { Write-Log "[$Description][ERR] $line" "WARN" }
+            if ($line.Trim()) {
+                Write-Log "[$Description][ERR] $line" "WARN"
+                if ($Debug) { Write-Host "[$Description][ERR] $line" -ForegroundColor Yellow }
+            }
         }
     }
 }
@@ -44,7 +50,7 @@ function Invoke-WithRetry {
         [string[]]$Command,
         [int]$MaxRetries = 3,
         [int]$BackoffSeconds = 5,
-        [int]$TimeoutSeconds = 600,   # default 10 minutes
+        [int]$TimeoutSeconds = 600,
         [string]$Description = "External command"
     )
 
@@ -64,7 +70,6 @@ function Invoke-WithRetry {
         $null = $proc.Start()
 
         if ($proc.WaitForExit($TimeoutSeconds * 1000)) {
-            # Completed within timeout
             $stdout = $proc.StandardOutput.ReadToEnd()
             $stderr = $proc.StandardError.ReadToEnd()
             Add-LogOutput $stdout $stderr $Description
@@ -76,7 +81,6 @@ function Invoke-WithRetry {
                 Write-Log "[$Description] failed with exit code $($proc.ExitCode)" "WARN"
             }
         } else {
-            # Timeout
             try { $proc.Kill() } catch {}
             Write-Log "[$Description] timed out after $TimeoutSeconds seconds." "ERROR"
         }

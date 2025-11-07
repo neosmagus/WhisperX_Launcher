@@ -18,158 +18,83 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
 
 . "$PSScriptRoot\exit_codes.ps1"
 . "$PSScriptRoot\whisperx_shared.ps1"
+. "$PSScriptRoot\whisperx_install_tasks.ps1"
 
-function Install-Miniconda {
-    param([string]$InstallerUrl, $cfg)
+# --- Load config ---
+$cfg = if ($ConfigDir) { Get-Config $ConfigDir } else { @{} }
 
-    $installerPath = Join-Path $env:TEMP "Miniconda3-latest-Windows-x86_64.exe"
+Write-Log "Starting WhisperX installation..."
 
-    # Download installer with retry + spinner
-    Invoke-WithRetry -Command @("powershell", "-Command", "Invoke-WebRequest -Uri $InstallerUrl -OutFile `"$installerPath`" -UseBasicParsing") `
-        -Description "Downloading Miniconda installer" `
-        -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
+# --- Summary tracking ---
+$Summary = @{
+    CondaInstalled    = $false
+    EnvCreated        = $false
+    PyTorchInstalled  = $false
+    WhisperXInstalled = $false
+    FfmpegInstalled   = $false
+    Verified          = $false
+    ShortcutCreated   = $false
+}
 
-    # Run installer silently
-    Invoke-WithRetry -Command @($installerPath, "/InstallationType=JustMe", "/AddToPath=1", "/RegisterPython=1", "/S", "/D=$env:USERPROFILE\Miniconda3") `
-        -Description "Installing Miniconda" `
-        -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
+# Define stages
+$stages = @(
+    @{ Name = "Check Conda"; Action = { Test-CondaPresence $cfg; $Summary.CondaInstalled = $true } },
+    @{ Name = "Download Miniconda"; Action = { Get-MinicondaInstaller $cfg } },
+    @{ Name = "Run Miniconda Installer"; Action = { Install-Miniconda $cfg; $Summary.CondaInstalled = $true } },
+    @{ Name = "Configure Conda Channels"; Action = { Set-CondaChannels $cfg } },
+    @{ Name = "Update Conda"; Action = { Update-Conda $cfg } },
+    @{ Name = "Create Environment"; Action = { Install-CondaEnvironment $cfg; $Summary.EnvCreated = $true } },
+    @{ Name = "Install PyTorch"; Action = { Install-PyTorch $cfg; $Summary.PyTorchInstalled = $true } },
+    @{ Name = "Install WhisperX"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
+    @{ Name = "Install ffmpeg-python"; Action = { Install-FFmpegPython $cfg; $Summary.FfmpegInstalled = $true } },
+    @{ Name = "Verify Environment"; Action = { Test-Environment $cfg; $Summary.Verified = $true } },
+    @{ Name = "Create Shortcut"; Action = { New-Shortcut $cfg; $Summary.ShortcutCreated = $true } }
+)
 
-    # Refresh PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-    [System.Environment]::GetEnvironmentVariable("Path", "User")
-
-    if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-        Write-Log "Miniconda installed but 'conda' not found." "ERROR"
-        exit 14
-    }
-
-    $condaVersion = conda --version
-    Write-Log "Miniconda installed successfully. Detected $condaVersion" "OK"
-
-    # Handle Anaconda ToS or switch to conda-forge
-    if ($cfg.AcceptAnacondaTOS) {
-        Write-Log "Accepting Anaconda Terms of Service for default channels..."
-        Invoke-WithRetry -Command @("conda", "tos", "accept", "--override-channels", "--channel", "https://repo.anaconda.com/pkgs/main") -Description "Accept TOS main"
-        Invoke-WithRetry -Command @("conda", "tos", "accept", "--override-channels", "--channel", "https://repo.anaconda.com/pkgs/r") -Description "Accept TOS r"
-        Invoke-WithRetry -Command @("conda", "tos", "accept", "--override-channels", "--channel", "https://repo.anaconda.com/pkgs/msys2") -Description "Accept TOS msys2"
-    } else {
-        Write-Log "Config set to not accept Anaconda ToS. Switching to conda-forge..."
-        Invoke-WithRetry -Command @("conda", "config", "--remove", "channels", "defaults") -Description "Remove defaults channel"
-        Invoke-WithRetry -Command @("conda", "config", "--add", "channels", "conda-forge") -Description "Add conda-forge channel"
-        Invoke-WithRetry -Command @("conda", "config", "--set", "channel_priority", "strict") -Description "Set channel priority strict"
-    }
-
-    # Record install policy marker
-    $policyFile = Join-Path "$env:USERPROFILE\Miniconda3" "install_policy.txt"
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $content = if ($cfg.AcceptAnacondaTOS) {
-        "Policy=AnacondaTOSAccepted; Installed=$timestamp"
-    } else {
-        "Policy=CondaForge; Installed=$timestamp"
-    }
-    Set-Content -Path $policyFile -Value $content
-    Write-Log "Recorded install policy: $content"
-
-    # Update conda itself
-    if (-not (Invoke-WithRetry -Command @("conda", "update", "-n", "base", "-y", "conda") `
-                -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds -Description "Conda update")) {
-        Write-Log "Continuing with installed version." "WARN"
-    } else {
-        $newVersion = conda --version
-        Write-Log "Conda successfully updated. Now running $newVersion" "OK"
+# --- Run stages with progress ---
+for ($i = 0; $i -lt $stages.Count; $i++) {
+    $pct = [int](($i / $stages.Count) * 100)
+    Write-Progress -Activity "WhisperX Installation" -Status $stages[$i].Name -PercentComplete $pct
+    try {
+        & $stages[$i].Action | Out-Null
+    } catch {
+        Write-Log "Stage '$($stages[$i].Name)' failed: $_" "ERROR"
+        if ($Debug) { Pause }
+        exit 1
     }
 }
 
-try {
-    # --- Load config ---
-    $cfg = if ($ConfigDir) { Get-Config $ConfigDir } else { @{} }
+Write-Progress -Activity "WhisperX Installation" -Completed
+Write-Log "Installation complete." "OK"
 
-    Write-Log "Starting WhisperX installation..."
+# --- Human-readable summary ---
+Write-Host "`n========== INSTALL SUMMARY ==========" -ForegroundColor Cyan
+Write-Host ("Conda Installed         : {0}" -f $Summary.CondaInstalled)
+Write-Host ("Environment Created     : {0}" -f $Summary.EnvCreated)
+Write-Host ("PyTorch Installed       : {0}" -f $Summary.PyTorchInstalled)
+Write-Host ("WhisperX Installed      : {0}" -f $Summary.WhisperXInstalled)
+Write-Host ("ffmpeg-python Installed : {0}" -f $Summary.FfmpegInstalled)
+Write-Host ("Environment Verified    : {0}" -f $Summary.Verified)
+Write-Host ("Shortcut Created        : {0}" -f $Summary.ShortcutCreated)
+Write-Host "=====================================" -ForegroundColor Cyan
 
-    # Install Miniconda if missing
-    if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-        Write-Log "Conda not found"
-        if ($cfg.InstallConda) {
-            $installerUrl = if ($cfg.CondaInstallerUrl) { $cfg.CondaInstallerUrl } else {
-                "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
-            }
-            Install-Miniconda -InstallerUrl $installerUrl -cfg $cfg
-        } else {
-            Write-Log "Conda not found and InstallConda=false." "ERROR"
-            exit 10
-        }
-    }
+# --- Machine-readable summary for batch wrapper ---
+$condaVersion = conda --version
+$summaryLine = "SUMMARY=" +
+"CondaInstalled=$($Summary.CondaInstalled);" +
+"EnvCreated=$($Summary.EnvCreated);" +
+"PyTorchInstalled=$($Summary.PyTorchInstalled);" +
+"WhisperXInstalled=$($Summary.WhisperXInstalled);" +
+"FfmpegInstalled=$($Summary.FfmpegInstalled);" +
+"Verified=$($Summary.Verified);" +
+"ShortcutCreated=$($Summary.ShortcutCreated);" +
+"CondaVersion=$condaVersion;" +
+"PythonVersion=$($cfg.PythonVersion);" +
+"CudaTarget=$($cfg.CudaTarget)"
+Write-Output $summaryLine
 
-    # Create environment if missing
-    $envPath = Join-Path $PSScriptRoot "..\envs\whisperx"
-    if (-not (Test-Path $envPath)) {
-        Invoke-WithRetry -Command @("conda", "create", "-y", "-n", "whisperx", "python=$($cfg.PythonVersion)", "--quiet", "--no-default-packages") `
-            -Description "Creating Conda environment (whisperx)" `
-            -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
-    }
-
-    # Install dependencies
-    Invoke-WithRetry -Command @("conda", "run", "-n", "whisperx", "pip", "install", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/$($cfg.CudaTarget)") `
-        -Description "Installing PyTorch stack" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
-
-    Invoke-WithRetry -Command @("conda", "run", "-n", "whisperx", "pip", "install", "git+https://github.com/m-bain/whisperx.git") `
-        -Description "Installing WhisperX" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
-
-    Invoke-WithRetry -Command @("conda", "run", "-n", "whisperx", "pip", "install", "ffmpeg-python") `
-        -Description "Installing ffmpeg-python" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
-
-    # Verify environment
-    Write-Log "Verifying WhisperX environment integrity..."
-    Invoke-WithRetry -Command @("conda", "run", "-n", "whisperx", "python", "-c", "import torch, whisperx, ffmpeg; print('OK')") `
-        -Description "Environment verification" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
-
-    Write-Log "Environment verification succeeded. Core packages are importable." "OK"
-    Write-Log "Installation complete." "OK"
-
-    # Create desktop shortcut
-    $desktopPath = [Environment]::GetFolderPath('Desktop')
-    $shortcutPath = Join-Path $desktopPath "WhisperX.lnk"
-    $targetPath = Join-Path $PSScriptRoot "..\..\run_whisperx.bat"
-    $iconPath = Join-Path $PSScriptRoot "..\..\icons\WhisperX_Launcher.ico"
-
-    $shortcutCreated = $false
-    if ((Test-Path $targetPath) -and (Test-Path $iconPath)) {
-        Write-Log "Creating desktop shortcut..."
-        $WshShell = New-Object -ComObject WScript.Shell
-        $shortcut = $WshShell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $targetPath
-        $shortcut.WorkingDirectory = Split-Path $targetPath
-        $shortcut.IconLocation = $iconPath
-        $shortcut.Save()
-        Write-Log "Desktop shortcut created: $shortcutPath"
-        $shortcutCreated = $true
-        Write-Output "SHORTCUT_PATH=$shortcutPath"
-    } else {
-        Write-Log "Shortcut not created - missing target or icon." "WARN"
-    }
-
-    # --- Emit machine-readable summary ---
-    $condaVersion = conda --version
-    $summaryLine = "SUMMARY=" +
-    "InstallComplete=True;" +
-    "ShortcutCreated=$shortcutCreated;" +
-    "ShortcutPath=$shortcutPath;" +
-    "CondaVersion=$condaVersion;" +
-    "PythonVersion=$($cfg.PythonVersion);" +
-    "CudaTarget=$($cfg.CudaTarget)"
-    Write-Output $summaryLine
-
-    if ($Debug) {
-        Write-Log "Debug mode active - press any key to close..."
-        Pause
-    }
-
-    exit 0
-} catch {
-    Write-Log "Unexpected install error: $_" "ERROR"
-    if ($Debug) {
-        Write-Log "Debug mode active - press any key to close..."
-        Pause
-    }
-    exit 1
+if ($Debug) {
+    Write-Log "Debug mode active - press any key to close..."
+    Pause
 }
+exit 0
