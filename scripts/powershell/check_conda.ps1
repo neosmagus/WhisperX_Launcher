@@ -15,10 +15,10 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
 try {
     $ErrorActionPreference = 'Stop'
 
-    Write-Host "=== Miniconda Installation Check ===" -ForegroundColor Cyan
+    Write-Host "=== Conda Installation Check (Miniconda / Anaconda) ===" -ForegroundColor Cyan
 
-    # --- Common Miniconda install locations ---
-    $locations = @(
+    # --- Common install locations ---
+    $minicondaLocations = @(
         "$env:USERPROFILE\Miniconda3",
         "$env:LOCALAPPDATA\Miniconda3",
         "$env:ALLUSERSPROFILE\Miniconda3",
@@ -26,48 +26,69 @@ try {
         "C:\Miniconda3"
     )
 
+    $anacondaLocations = @(
+        "$env:USERPROFILE\Anaconda3",
+        "$env:LOCALAPPDATA\Anaconda3",
+        "$env:ALLUSERSPROFILE\Anaconda3",
+        "C:\ProgramData\Anaconda3",
+        "C:\Anaconda3"
+    )
+
     $results = @()
     $foundValid = $false
 
-    foreach ($loc in $locations) {
+    function Test-CondaInstall($loc, $label) {
+        $status = "$label Not found"
+        $color = "DarkGray"
+        $valid = $false
+
         if (Test-Path $loc) {
             $condaExe = Join-Path $loc "Scripts\conda.exe"
             $condaBat = Join-Path $loc "condabin\conda.bat"
-            if (Test-Path $condaExe -or Test-Path $condaBat) {
-                $status = "Installed"
+            if ((Test-Path $condaExe) -or (Test-Path $condaBat)) {
+                $status = "$label Installed"
                 $color = "Green"
-                $foundValid = $true
+                $valid = $true
             } else {
-                $status = "Partial (folder exists, conda not found)"
+                $status = "$label Partial (folder exists, conda not found)"
                 $color = "Yellow"
             }
-        } else {
-            $status = "Not found"
-            $color = "DarkGray"
         }
 
         Write-Host ("{0,-50} {1}" -f $loc, $status) -ForegroundColor $color
         $results += [PSCustomObject]@{ Path = $loc; Status = $status }
+
+        return $valid
+    }
+
+    # --- Check Miniconda ---
+    foreach ($loc in $minicondaLocations) {
+        if (Test-CondaInstall $loc "Miniconda") { $foundValid = $true }
+    }
+
+    # --- Check Anaconda ---
+    foreach ($loc in $anacondaLocations) {
+        if (Test-CondaInstall $loc "Anaconda") { $foundValid = $true }
     }
 
     # --- PATH variable check ---
     Write-Host "`n=== PATH Variable Check ===" -ForegroundColor Cyan
     foreach ($scope in @("User", "Machine")) {
         $pathValue = [Environment]::GetEnvironmentVariable("Path", $scope)
-        $pathMatches = $pathValue -split ';' | Where-Object { $_ -match "(?i)Miniconda3" }
+        $pathMatches = $pathValue -split ';' | Where-Object { $_ -match "(?i)(Miniconda3|Anaconda3)" }
         if ($pathMatches) {
-            Write-Host "$scope PATH contains Miniconda reference(s):" -ForegroundColor Yellow
+            Write-Host "$scope PATH contains Conda reference(s):" -ForegroundColor Yellow
             foreach ($m in $pathMatches) { Write-Host "  $m" -ForegroundColor Yellow }
         } else {
-            Write-Host "$scope PATH has no Miniconda reference" -ForegroundColor DarkGray
-        }    
+            Write-Host "$scope PATH has no Miniconda/Anaconda reference" -ForegroundColor DarkGray
+        }
     }
 
     # --- Summary / Exit code ---
     if (-not $foundValid) {
-        Write-Host "`nNo valid Miniconda installation detected." -ForegroundColor Red
+        Write-Host "`nNo valid Miniconda/Anaconda installation detected." -ForegroundColor Red
     } else {
-        Write-Host "`nAt least one valid Miniconda installation detected." -ForegroundColor Green
+        Write-Host "`nAt least one valid Miniconda/Anaconda installation detected." -ForegroundColor Green
     }
 
     if ($Json) {
