@@ -28,11 +28,11 @@ function Test-CondaEnvironment($cfg) {
 
 function Remove-CondaEnvironment($cfg) {
     if ($global:EnvExists -and (Get-Command conda -ErrorAction SilentlyContinue)) {
-        if (-not (Invoke-WithRetry -Command @("conda", "env", "remove", "-n", $cfg.EnvName, "-y") `
+        if (-not (Invoke-WithRetry -Command @("conda", "env", "remove", "-p", $global:EnvPath, "-y") `
                     -MaxRetries ($cfg.RetryCount ? $cfg.RetryCount : 3) `
                     -BackoffSeconds ($cfg.BackoffSeconds ? $cfg.BackoffSeconds : 5) `
-                    -Description "Remove Conda environment ($($cfg.EnvName))")) {
-            Write-Log "Could not remove Conda environment $($cfg.EnvName). Skipping." "WARN"
+                    -Description "Remove Conda environment ($global:EnvPath)")) {
+            Write-Log "Could not remove Conda environment at $global:EnvPath. Skipping." "WARN"
         } else {
             $Summary.CondaEnvRemoved = $true
         }

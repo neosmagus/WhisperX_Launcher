@@ -78,29 +78,35 @@ function Update-Conda($cfg) {
 }
 
 function Install-CondaEnvironment($cfg) {
+    # Work out the environment root and full path
     $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
     $envPath = Join-Path $envRoot $cfg.EnvName
 
+    # Only create if the folder doesn't already exist
     if (-not (Test-Path $envPath)) {
-        if (-not (Invoke-WithRetry -Command @("conda", "create", "-y", "-n", $cfg.EnvName,
+        if (-not (Invoke-WithRetry -Command @("conda", "create", "-y", "-p", $envPath,
                     "python=$($cfg.PythonVersion)", "--quiet", "--no-default-packages") `
-                    -Description "Creating Conda environment ($($cfg.EnvName))" `
+                    -Description "Creating Conda environment ($envPath)" `
                     -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
-            Write-Log "Failed to create environment $($cfg.EnvName)." "ERROR"
+            Write-Log "Failed to create environment at $envPath." "ERROR"
             exit 20
         }
     }
-    Write-Log "Environment $($cfg.EnvName) ready." "OK"
+
+    Write-Log "Environment $($cfg.EnvName) ready at $envPath." "OK"
 }
 
 function Install-Pip($cfg) {
-    if (-not (Invoke-WithRetry -Command @("conda", "install", "-n", $cfg.EnvName, "-y", "pip") `
-                -Description "Installing pip into environment" `
+    $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
+    $envPath = Join-Path $envRoot $cfg.EnvName
+
+    if (-not (Invoke-WithRetry -Command @("conda", "install", "-p", $envPath, "-y", "pip") `
+                -Description "Installing pip into environment ($envPath)" `
                 -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
-        Write-Log "Failed to install pip into environment $($cfg.EnvName)." "ERROR"
+        Write-Log "Failed to install pip into environment at $envPath." "ERROR"
         exit 32
     }
-    Write-Log "pip installed successfully in environment $($cfg.EnvName)." "OK"
+    Write-Log "pip installed successfully in environment at $envPath." "OK"
 }
 
 function Install-PyTorch($cfg) {
@@ -131,9 +137,17 @@ function Install-WhisperX($cfg) {
         exit 31
     }
 
-    Write-Log "Installing WhisperX (this may take a few minutes to download and install)..."
-    Invoke-WithRetry -Command @($pipExe, "install", "git+https://github.com/m-bain/whisperx.git") `
-        -Description "Installing WhisperX" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
+    Write-Log "Installing WhisperX."
+
+    # Increase timeout to 1800 seconds (30 minutes) for this heavy install
+    if (-not (Invoke-WithRetry -Command @($pipExe, "install", "--progress-bar", "pretty",
+                "git+https://github.com/m-bain/whisperx.git") `
+                -Description "Installing WhisperX" `
+                -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds `
+                -TimeoutSeconds 1800)) {
+        Write-Log "Failed to install WhisperX." "ERROR"
+        exit 33
+    }
 
     Write-Log "WhisperX installed." "OK"
 }
@@ -165,9 +179,13 @@ function Test-Environment($cfg) {
     }
 
     Write-Log "Verifying WhisperX environment integrity..."
-    if (-not (Invoke-WithRetry -Command @($pythonExe, "-c",
-                "import torch, whisperx, ffmpeg; print('Environment OK')") `
-                -Description "Environment verification" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
+
+    # Pass the code snippet as a single argument string
+    $code = 'import torch, whisperx, ffmpeg; print("Environment OK")'
+
+    if (-not (Invoke-WithRetry -Command @($pythonExe, "-c", $code) `
+                -Description "Environment verification" `
+                -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
         Write-Log "Environment verification failed." "ERROR"
         exit 50
     }

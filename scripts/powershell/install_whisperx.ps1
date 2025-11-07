@@ -47,7 +47,7 @@ $stages = @(
     @{ Name = "Create Environment"; Action = { Install-CondaEnvironment $cfg; $Summary.EnvCreated = $true } },
     @{ Name = "Install Pip"; Action = { Install-Pip $cfg; $Summary.PipInstalled = $true } },
     @{ Name = "Install PyTorch"; Action = { Install-PyTorch $cfg; $Summary.PyTorchInstalled = $true } },
-    @{ Name = "Install WhisperX"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
+    @{ Name = "Install WhisperX (this may take a while)"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
     @{ Name = "Install ffmpeg-python"; Action = { Install-FFmpegPython $cfg; $Summary.FfmpegInstalled = $true } },
     @{ Name = "Verify Environment"; Action = { Test-Environment $cfg; $Summary.Verified = $true } },
     @{ Name = "Create Shortcut"; Action = { New-Shortcut $cfg; $Summary.ShortcutCreated = $true } }
