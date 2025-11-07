@@ -30,7 +30,7 @@ $stages = @(
     @{ Name = "Manual Folder Cleanup"; Action = { Remove-EnvironmentFolder } },
     @{ Name = "Remove Desktop Shortcut"; Action = { Remove-Shortcut; $Summary.ShortcutRemoved = $true } },
     @{ Name = "Remove Miniconda (optional)"; Action = { Remove-Miniconda $cfg; $Summary.MinicondaRemoved = $true } },
-    @{ Name = "Cleanup Extra Conda Installs"; Action = { Cleanup-CondaInstalls $Cleanup } },
+    @{ Name = "Cleanup Extra Conda Installs"; Action = { Remove-CondaInstalls $Cleanup } },
     @{ Name = "Final Verification"; Action = { Test-UninstallVerification $cfg; $Summary.VerifiedRemoved = $true } }
 )
 

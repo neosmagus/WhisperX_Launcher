@@ -90,7 +90,7 @@ function Remove-Miniconda($cfg) {
     }
 }
 
-function Cleanup-CondaInstalls($Cleanup) {
+function Remove-CondaInstalls($Cleanup) {
     if ($Cleanup) {
         while ($true) {
             $condaCmd = Get-Command conda -ErrorAction SilentlyContinue
