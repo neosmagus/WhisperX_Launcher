@@ -13,6 +13,11 @@
   "PyannoteAudioVersion": "3.3.2",
   "PyannotePipelineVersion": "3.0.1",
   "NumpyVersion": "1.26.4",
+  "TransformersVersion": "4.39.3",
+  "TokenizersVersion": "0.15.2",
+  "HuggingfaceHubVersion": "0.23.0",
+  "SafetensorsVersion": "0.6.2",
+  "NltkVersion": "3.9.1",
 
   "model": "base",
   "output_dir": "output",

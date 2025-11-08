@@ -46,9 +46,33 @@ $stages = @(
     @{ Name = "Update Conda"; Action = { Update-Conda $cfg } },
     @{ Name = "Create Environment"; Action = { Install-CondaEnvironment $cfg; $Summary.EnvCreated = $true } },
     @{ Name = "Install Pip"; Action = { Install-Pip $cfg; $Summary.PipInstalled = $true } },
+
+    # Core scientific stack
+    @{ Name = "Install Numpy"; Action = { Install-Numpy $cfg } },
+
+    # PyTorch stack
     @{ Name = "Install PyTorch"; Action = { Install-PyTorch $cfg; $Summary.PyTorchInstalled = $true } },
-    @{ Name = "Install WhisperX (this may take a while)"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
+
+    # HuggingFace stack
+    @{ Name = "Install Transformers"; Action = { Install-Transformers $cfg } },
+    @{ Name = "Install Tokenizers"; Action = { Install-Tokenizers $cfg } },
+    @{ Name = "Install Huggingface Hub"; Action = { Install-HuggingfaceHub $cfg } },
+    @{ Name = "Install Safetensors"; Action = { Install-Safetensors $cfg } },
+    @{ Name = "Install Nltk"; Action = { Install-Nltk $cfg } },
+
+    # WhisperX itself (no deps)
+    @{ Name = "Install WhisperX"; Action = { Install-WhisperX $cfg; $Summary.WhisperXInstalled = $true } },
+
+    # Pyannote stack
+    @{ Name = "Install Pyannote Audio"; Action = { Install-PyannoteAudio $cfg } },
+    @{ Name = "Install Pyannote Pipeline"; Action = { Install-PyannotePipeline $cfg } },
+    @{ Name = "Install Pyannote Metrics"; Action = { Install-PyannoteMetrics $cfg } },
+    @{ Name = "Install Pyannote Core"; Action = { Install-PyannoteCore $cfg } },
+
+    # ffmpeg-python
     @{ Name = "Install ffmpeg-python"; Action = { Install-FFmpegPython $cfg; $Summary.FfmpegInstalled = $true } },
+
+    # Final checks
     @{ Name = "Verify Environment"; Action = { Test-Environment $cfg; $Summary.Verified = $true } },
     @{ Name = "Create Shortcut"; Action = { New-Shortcut $cfg; $Summary.ShortcutCreated = $true } }
 )

@@ -47,45 +47,96 @@ function Add-LogOutput {
 
 function Invoke-WithRetry {
     param(
+        [Parameter(Mandatory = $true)]
         [string[]]$Command,
+        [string]$Description = "",
         [int]$MaxRetries = 3,
         [int]$BackoffSeconds = 5,
-        [int]$TimeoutSeconds = 600,
-        [string]$Description = "External command"
+        [int]$TimeoutSeconds = 1800,
+        [int]$InactivitySeconds = 600,
+        [switch]$NoProgressDuringRun  # optional: temporarily suppress Write-Progress
     )
 
     for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
         Write-Log "[$Description] Attempt $attempt of $MaxRetries..."
 
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $Command[0]
-        $psi.Arguments = ($Command[1..($Command.Length - 1)] -join " ")
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
+        $oldProgressPref = $Global:ProgressPreference
+        if ($NoProgressDuringRun) { $Global:ProgressPreference = 'SilentlyContinue' }
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        $null = $proc.Start()
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $Command[0]
+            $psi.Arguments = ($Command[1..($Command.Length - 1)] -join " ")
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.RedirectStandardInput = $true   # allow us to close stdin
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
-        if ($proc.WaitForExit($TimeoutSeconds * 1000)) {
-            $stdout = $proc.StandardOutput.ReadToEnd()
-            $stderr = $proc.StandardError.ReadToEnd()
-            Add-LogOutput $stdout $stderr $Description
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $psi
+            $proc.Start() | Out-Null
+
+            # Close stdin to prevent child from waiting on input
+            try { $proc.StandardInput.Close() } catch {}
+
+            $startTime = Get-Date
+            $lastOutput = Get-Date
+
+            while (-not $proc.HasExited) {
+                while ($proc.StandardOutput.Peek() -ne -1) {
+                    $lineOut = $proc.StandardOutput.ReadLine()
+                    if ($lineOut) {
+                        $lastOutput = Get-Date
+                        Write-Log "[$Description][OUT] $lineOut" "INFO"
+                        if ($Debug) { Write-Host "[DEBUG][OUT] $lineOut" -ForegroundColor Yellow }
+                    }
+                }
+                while ($proc.StandardError.Peek() -ne -1) {
+                    $lineErr = $proc.StandardError.ReadLine()
+                    if ($lineErr) {
+                        $lastOutput = Get-Date
+                        Write-Log "[$Description][ERR] $lineErr" "WARN"
+                        if ($Debug) { Write-Host "[DEBUG][ERR] $lineErr" -ForegroundColor Red }
+                    }
+                }
+
+                $idle = (Get-Date) - $lastOutput
+                if ($idle.TotalSeconds -ge $InactivitySeconds) {
+                    Write-Log "[$Description] No output for $InactivitySeconds seconds — killing process." "ERROR"
+                    try { $proc.Kill() } catch {}
+                    break
+                }
+
+                $elapsed = (Get-Date) - $startTime
+                if ($elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                    Write-Log "[$Description] Timed out after $TimeoutSeconds seconds — killing process." "ERROR"
+                    try { $proc.Kill() } catch {}
+                    break
+                }
+
+                Start-Sleep -Milliseconds 200
+            }
+
+            $proc.WaitForExit(5000) | Out-Null
 
             if ($proc.ExitCode -eq 0) {
-                Write-Log "[$Description] succeeded." "OK"
+                if ($NoProgressDuringRun) { $Global:ProgressPreference = $oldProgressPref }
                 return $true
             } else {
                 Write-Log "[$Description] failed with exit code $($proc.ExitCode)" "WARN"
             }
-        } else {
-            try { $proc.Kill() } catch {}
-            Write-Log "[$Description] timed out after $TimeoutSeconds seconds." "ERROR"
+        } catch {
+            Write-Log "[$Description] exception: $_" "ERROR"
+        } finally {
+            if ($NoProgressDuringRun) { $Global:ProgressPreference = $oldProgressPref }
         }
 
-        Start-Sleep -Seconds $BackoffSeconds
+        if ($attempt -lt $MaxRetries) {
+            Start-Sleep -Seconds $BackoffSeconds
+        }
     }
 
     return $false
