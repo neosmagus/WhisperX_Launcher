@@ -3,22 +3,6 @@
   "EnvName": "whisperx",
   "PythonVersion": "3.10.18",
 
-  "UseGPU": false,
-  "CudaTarget": "cu121",
-
-  "TorchVersion": "2.3.1",
-  "TorchaudioVersion": "2.3.1",
-  "TorchvisionVersion": "0.18.1",
-  "WhisperXVersion": "3.3.0",
-  "PyannoteAudioVersion": "3.3.2",
-  "PyannotePipelineVersion": "3.0.1",
-  "NumpyVersion": "1.26.4",
-  "TransformersVersion": "4.39.3",
-  "TokenizersVersion": "0.15.2",
-  "HuggingfaceHubVersion": "0.23.0",
-  "SafetensorsVersion": "0.6.2",
-  "NltkVersion": "3.9.1",
-
   "model": "base",
   "output_dir": "output",
   "diarize": false,
@@ -34,5 +18,45 @@
   "LogPath": ".\\logs",
   "InstallConda": true,
   "CondaInstallerUrl": "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe",
-  "AcceptAnacondaTOS": true
+  "AcceptAnacondaTOS": true,
+
+  "UseGPU": false,
+  "CudaTarget": "cu121",
+  "Dependencies": [
+    { "Name": "numpy", "Version": "1.26.4" },
+    {
+      "Name": "torch",
+      "Version": "2.3.1",
+      "UseGpuFlag": true,
+      "TimeoutSeconds": 1800
+    },
+    {
+      "Name": "torchaudio",
+      "Version": "2.3.1",
+      "UseGpuFlag": true,
+      "TimeoutSeconds": 1800
+    },
+    {
+      "Name": "torchvision",
+      "Version": "0.18.1",
+      "UseGpuFlag": true,
+      "TimeoutSeconds": 1800
+    },
+    { "Name": "transformers", "Version": "4.39.3" },
+    { "Name": "tokenizers", "Version": "0.15.2" },
+    { "Name": "huggingface_hub", "Version": "0.23.0" },
+    { "Name": "safetensors", "Version": "0.6.2" },
+    { "Name": "nltk", "Version": "3.9.1" },
+    {
+      "Name": "whisperx",
+      "Version": "3.3.0",
+      "NoDeps": true,
+      "TimeoutSeconds": 1800
+    },
+    { "Name": "pyannote.audio", "Version": "3.3.2" },
+    { "Name": "pyannote.pipeline", "Version": "3.0.1" },
+    { "Name": "pyannote.metrics", "Version": "<4.0.0" },
+    { "Name": "pyannote.core", "Version": "<6.0.0" },
+    { "Name": "ffmpeg-python" }
+  ]
 }
