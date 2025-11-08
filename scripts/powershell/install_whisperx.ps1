@@ -39,7 +39,7 @@ $Summary = @{
 
 # Define stages
 $stages = @(
-    @{ Name = "Check Conda"; Action = { Test-CondaPresence $cfg; $Summary.CondaInstalled = $true } },
+    @{ Name = "Check Conda"; Action = { Test-CondaPresence $cfg } },
     @{ Name = "Download Miniconda"; Action = { Get-MinicondaInstaller $cfg } },
     @{ Name = "Run Miniconda Installer"; Action = { Install-Miniconda $cfg; $Summary.CondaInstalled = $true } },
     @{ Name = "Configure Conda Channels"; Action = { Set-CondaChannels $cfg } },

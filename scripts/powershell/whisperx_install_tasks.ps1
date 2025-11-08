@@ -1,9 +1,10 @@
 # whisperx_install_tasks.ps1
-# Task functions for WhisperX installation
+# Task functions for WhisperX installation with pinned versions and full bootstrap
 
 function Test-CondaPresence($cfg) {
     if (Get-Command conda -ErrorAction SilentlyContinue) {
         Write-Log "Conda already present."
+        $Summary.CondaInstalled = $true   # mark only if found
     } elseif (-not $cfg.InstallConda) {
         Write-Log "Conda not found and InstallConda=false." "ERROR"
         exit 10
@@ -78,11 +79,9 @@ function Update-Conda($cfg) {
 }
 
 function Install-CondaEnvironment($cfg) {
-    # Work out the environment root and full path
     $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
     $envPath = Join-Path $envRoot $cfg.EnvName
 
-    # Only create if the folder doesn't already exist
     if (-not (Test-Path $envPath)) {
         if (-not (Invoke-WithRetry -Command @("conda", "create", "-y", "-p", $envPath,
                     "python=$($cfg.PythonVersion)", "--quiet", "--no-default-packages") `
@@ -92,7 +91,6 @@ function Install-CondaEnvironment($cfg) {
             exit 20
         }
     }
-
     Write-Log "Environment $($cfg.EnvName) ready at $envPath." "OK"
 }
 
@@ -119,12 +117,21 @@ function Install-PyTorch($cfg) {
         exit 30
     }
 
-    Invoke-WithRetry -Command @($pipExe, "install",
-        "torch", "torchvision", "torchaudio",
-        "--index-url", "https://download.pytorch.org/whl/$($cfg.CudaTarget)") `
-        -Description "Installing PyTorch stack" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
+    $suffix = if ($cfg.UseGPU) { "+$($cfg.CudaTarget)" } else { "+cpu" }
 
-    Write-Log "PyTorch stack installed." "OK"
+    $torchVer = "$($cfg.TorchVersion)$suffix"
+    $torchaudioVer = "$($cfg.TorchaudioVersion)$suffix"
+    $torchvisionVer = "$($cfg.TorchvisionVersion)$suffix"
+
+    Invoke-WithRetry -Command @(
+        $pipExe, "install",
+        "torch==$torchVer",
+        "torchaudio==$torchaudioVer",
+        "torchvision==$torchvisionVer",
+        "--index-url", "https://download.pytorch.org/whl/$($cfg.CudaTarget)"
+    ) -Description "Installing PyTorch stack" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds -TimeoutSeconds 1800
+
+    Write-Log "PyTorch stack installed (torch=$torchVer, torchaudio=$torchaudioVer, torchvision=$torchvisionVer)." "OK"
 }
 
 function Install-WhisperX($cfg) {
@@ -137,19 +144,27 @@ function Install-WhisperX($cfg) {
         exit 31
     }
 
-    Write-Log "Installing WhisperX."
+    Write-Log "Installing WhisperX and pinned dependencies..."
 
-    # Increase timeout to 1800 seconds (30 minutes) for this heavy install
-    if (-not (Invoke-WithRetry -Command @($pipExe, "install", "--progress-bar", "pretty",
-                "git+https://github.com/m-bain/whisperx.git") `
-                -Description "Installing WhisperX" `
-                -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds `
-                -TimeoutSeconds 1800)) {
-        Write-Log "Failed to install WhisperX." "ERROR"
+    $result = Invoke-WithRetry -Command @(
+        $pipExe, "install",
+        "whisperx==$($cfg.WhisperXVersion)",
+        "pyannote.audio==$($cfg.PyannoteAudioVersion)",
+        "pyannote.pipeline==$($cfg.PyannotePipelineVersion)",
+        "numpy==$($cfg.NumpyVersion)",
+        "pyannote-core<6.0.0",
+        "pyannote-metrics<4.0.0"
+    ) -Description "Installing WhisperX stack" `
+        -MaxRetries $cfg.RetryCount `
+        -BackoffSeconds $cfg.BackoffSeconds `
+        -TimeoutSeconds 1800
+
+    if (-not $result) {
+        Write-Log "Failed to install WhisperX stack." "ERROR"
         exit 33
     }
 
-    Write-Log "WhisperX installed." "OK"
+    Write-Log "WhisperX stack installed." "OK"
 }
 
 function Install-FFmpegPython($cfg) {
@@ -162,10 +177,13 @@ function Install-FFmpegPython($cfg) {
         exit 40
     }
 
-    Invoke-WithRetry -Command @($pipExe, "install", "ffmpeg-python") `
-        -Description "Installing ffmpeg-python" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds
+    if (-not (Invoke-WithRetry -Command @($pipExe, "install", "ffmpeg-python") `
+                -Description "Installing ffmpeg-python" -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
+        Write-Log "Failed to install ffmpeg-python." "ERROR"
+        exit 41
+    }
 
-    Write-Log "ffmpeg-python installed." "OK"
+    Write-Log "ffmpeg-python installed. Accessible via Python import." "OK"
 }
 
 function Test-Environment($cfg) {
@@ -179,15 +197,13 @@ function Test-Environment($cfg) {
     }
 
     Write-Log "Verifying WhisperX environment integrity..."
-
-    # Pass the code snippet as a single argument string
     $code = 'import torch, whisperx, ffmpeg; print("Environment OK")'
 
     if (-not (Invoke-WithRetry -Command @($pythonExe, "-c", $code) `
                 -Description "Environment verification" `
                 -MaxRetries $cfg.RetryCount -BackoffSeconds $cfg.BackoffSeconds)) {
         Write-Log "Environment verification failed." "ERROR"
-        exit 50
+        exit 51
     }
 
     Write-Log "Environment verification succeeded. Core packages are importable." "OK"

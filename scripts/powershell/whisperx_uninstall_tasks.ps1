@@ -2,48 +2,54 @@
 # Task functions for WhisperX uninstallation
 
 function Test-CondaEnvironment($cfg) {
-    $envName = if ($cfg.EnvName) { $cfg.EnvName } else { "whisperx" }
     $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
-    $envPath = Join-Path $envRoot $envName
-    $global:EnvPath = $envPath
-    $global:EnvExists = $false
+    $envPath = Join-Path $envRoot ($cfg.EnvName ? $cfg.EnvName : "whisperx")
+    $envExists = $false
 
     if (Get-Command conda -ErrorAction SilentlyContinue) {
         try {
             $envList = conda env list --json | ConvertFrom-Json
             if ($envList.envs -contains $envPath) {
-                $global:EnvExists = $true
-                Write-Log "Conda environment $envName found at $envPath"
+                $envExists = $true
+                Write-Log "Conda environment found at $envPath"
             } else {
-                Write-Log "Conda environment $envName not found." "INFO"
+                Write-Log "Conda environment not found at $envPath" "INFO"
             }
         } catch {
             Write-Log "Failed to query Conda environments: $_" "WARN"
         }
     } elseif (Test-Path $envPath) {
-        $global:EnvExists = $true
+        $envExists = $true
         Write-Log "Environment folder exists at $envPath"
     }
+
+    return $envExists
 }
 
 function Remove-CondaEnvironment($cfg) {
-    if ($global:EnvExists -and (Get-Command conda -ErrorAction SilentlyContinue)) {
-        if (-not (Invoke-WithRetry -Command @("conda", "env", "remove", "-p", $global:EnvPath, "-y") `
+    $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
+    $envPath = Join-Path $envRoot ($cfg.EnvName ? $cfg.EnvName : "whisperx")
+
+    if ((Test-CondaEnvironment $cfg) -and (Get-Command conda -ErrorAction SilentlyContinue)) {
+        if (-not (Invoke-WithRetry -Command @("conda", "env", "remove", "-p", $envPath, "-y") `
                     -MaxRetries ($cfg.RetryCount ? $cfg.RetryCount : 3) `
                     -BackoffSeconds ($cfg.BackoffSeconds ? $cfg.BackoffSeconds : 5) `
-                    -Description "Remove Conda environment ($global:EnvPath)")) {
-            Write-Log "Could not remove Conda environment at $global:EnvPath. Skipping." "WARN"
+                    -Description "Remove Conda environment ($envPath)")) {
+            Write-Log "Could not remove Conda environment at $envPath. Skipping." "WARN"
         } else {
             $Summary.CondaEnvRemoved = $true
         }
     }
 }
 
-function Remove-EnvironmentFolder() {
-    if ($global:EnvExists -and (Test-Path $global:EnvPath)) {
+function Remove-EnvironmentFolder($cfg) {
+    $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
+    $envPath = Join-Path $envRoot ($cfg.EnvName ? $cfg.EnvName : "whisperx")
+
+    if (Test-Path $envPath) {
         try {
-            Remove-Item -Recurse -Force $global:EnvPath
-            Write-Log "Manually removed environment folder at $global:EnvPath" "OK"
+            Remove-Item -Recurse -Force $envPath
+            Write-Log "Manually removed environment folder at $envPath" "OK"
             $Summary.CondaEnvRemoved = $true
         } catch {
             Write-Log "Failed to manually remove environment folder: $_" "WARN"
@@ -118,17 +124,18 @@ function Remove-CondaInstalls($Cleanup) {
 }
 
 function Test-UninstallVerification($cfg) {
-    $envPath = $global:EnvPath
+    $envRoot = if ($cfg.EnvPath) { $cfg.EnvPath } else { (Join-Path $PSScriptRoot "..\envs") }
+    $envPath = Join-Path $envRoot ($cfg.EnvName ? $cfg.EnvName : "whisperx")
     $pythonExe = Join-Path $envPath "python.exe"
     $pipExe = Join-Path $envPath "Scripts\pip.exe"
 
     Write-Log "Performing final verification..."
 
     if (-not (Test-Path $envPath) -and -not (Test-Path $pythonExe) -and -not (Test-Path $pipExe)) {
-        Write-Log "Environment $($cfg.EnvName) successfully removed." "OK"
+        Write-Log "Environment successfully removed at $envPath." "OK"
         $Summary.VerifiedRemoved = $true
     } else {
-        Write-Log "Environment $($cfg.EnvName) still present. Manual cleanup may be required." "WARN"
+        Write-Log "Environment still present at $envPath. Manual cleanup may be required." "WARN"
     }
 
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
